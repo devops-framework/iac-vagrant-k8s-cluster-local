@@ -1,0 +1,150 @@
+---
+- name: Install Docker
+  apt:
+    name:
+      - docker.io
+      - docker-compose
+    state: present
+
+- name: Add ubuntu user to docker group
+  user:
+    name: ubuntu
+    groups: docker
+    append: yes
+ 
+- name: Install containerd
+  ansible.builtin.apt:
+    name: containerd
+    state: present
+    update_cache: yes
+
+- name: Configure containerd to use systemd cgroup driver
+  ansible.builtin.shell: |
+    mkdir -p /etc/containerd
+    containerd config default > /etc/containerd/config.toml
+    # enable systemd cgroup driver
+    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml || true
+  args:
+    executable: /bin/bash
+
+- name: Restart and enable containerd
+  ansible.builtin.service:
+    name: containerd
+    state: restarted
+    enabled: yes
+
+- name: Install Helm
+  shell: |
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  args:
+    executable: /bin/bash
+
+- name: Ensure br_netfilter module is loaded
+  ansible.builtin.modprobe:
+    name: br_netfilter
+    state: present
+
+- name: Ensure net.bridge.bridge-nf-call-iptables is set
+  ansible.builtin.sysctl:
+    name: net.bridge.bridge-nf-call-iptables
+    value: '1'
+    sysctl_set: yes
+    state: present
+    reload: yes
+
+- name: Disable swap (temporary) and remove swap fstab entries
+  ansible.builtin.shell: |
+    swapoff -a
+    # comment out swap entries in /etc/fstab so swap stays disabled after reboot
+    sed -i.bak -r 's/^([^#].*\s+swap\s+)/#\1/' /etc/fstab || true
+  args:
+    executable: /bin/bash
+
+- name: Install apt-transport-https and ca-certificates
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+    state: present
+    update_cache: yes
+# Use the recommended keyring + signed-by approach for Kubernetes apt repo
+- name: Ensure gnupg is installed (needed to dearmor keys)
+  ansible.builtin.apt:
+    name: gnupg
+    state: present
+    update_cache: yes
+
+- name: Download Kubernetes apt key
+  ansible.builtin.get_url:
+    url: https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key
+    dest: /tmp/k8s-release.key
+    mode: '0644'
+
+- name: Create keyring for kubernetes apt repository
+  ansible.builtin.command: >
+    gpg --dearmor --yes --output /usr/share/keyrings/kubernetes-archive-keyring.gpg /tmp/k8s-release.key
+  args:
+    creates: /usr/share/keyrings/kubernetes-archive-keyring.gpg
+
+- name: Remove temporary kubernetes key file
+  ansible.builtin.file:
+    path: /tmp/k8s-release.key
+    state: absent
+
+- name: Add Kubernetes apt repository (signed-by keyring)
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /"
+    state: present
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+
+- name: Install kubelet, kubeadm, kubectl
+  ansible.builtin.apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+    state: present
+    update_cache: yes
+
+- name: Hold kube packages to prevent automatic upgrades
+  ansible.builtin.command: apt-mark hold kubelet kubeadm kubectl
+
+- name: Set /etc/hosts for all cluster nodes
+  become: true
+  lineinfile:
+    path: /etc/hosts
+    create: yes
+    line: "{{ item.ip }} {{ item.hostname }}"
+    state: present
+  with_items: "{{ cluster_hosts }}"
+  when: cluster_hosts is defined
+  tags: etc_hosts
+
+- name: Stop systemd-resolved
+  service:
+    name: systemd-resolved
+    state: stopped
+    enabled: no
+
+- name: Add public DNS servers
+  lineinfile:
+    path: /etc/resolv.conf
+    line: "{{ item }}"
+    state: present
+    insertafter: EOF
+  loop:
+    - "nameserver 8.8.8.8"
+    - "nameserver 1.1.1.1"
+
+- name: Restart containerd
+  service:
+    name: containerd
+    state: restarted
+
+- name: Restart kubelet
+  service:
+    name: kubelet
+    state: restarted

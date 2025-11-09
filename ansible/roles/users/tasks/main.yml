@@ -1,0 +1,39 @@
+---
+  
+
+  - name: Add ubuntu user
+    user:
+      name: ubuntu
+      groups: sudo
+      shell: /bin/bash
+      create_home: yes
+
+  - name: Allow ubuntu to use sudo without password
+    copy:
+      dest: /etc/sudoers.d/ubuntu
+      content: "ubuntu ALL=(ALL) NOPASSWD:ALL\n"
+      owner: root
+      group: root
+      mode: 0440
+
+  - name: Set authorized key for ubuntu
+    authorized_key:
+      user: ubuntu
+      state: present
+      key: "{{ lookup('file', '/home/vagrant/.ssh/authorized_keys') }}"
+
+  - name: Install python3-passlib for password hashing
+    apt:
+      name: python3-passlib
+      state: present
+
+  - name: Load vault variables for users (encrypted)
+    include_vars:
+      file: "{{ role_path }}/group_vars/vault_password.yml"
+    no_log: true
+
+  - name: Set password for ubuntu user
+    user:
+      name: ubuntu
+      # user.password expects a shadow/hashed password. Hash the vault value here.
+      password: "{{ ubuntu_password | password_hash('sha512') }}"

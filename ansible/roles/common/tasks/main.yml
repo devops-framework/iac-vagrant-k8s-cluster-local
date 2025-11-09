@@ -1,0 +1,15 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+
+- name: Install essential packages
+  apt:
+    name:
+      - curl
+      - wget
+      - unzip
+      - git
+      - software-properties-common
+
+    state: present
