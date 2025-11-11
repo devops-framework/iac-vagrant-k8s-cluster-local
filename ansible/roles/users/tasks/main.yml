@@ -1,6 +1,4 @@
 ---
-  
-
   - name: Add ubuntu user
     user:
       name: ubuntu
@@ -37,3 +35,45 @@
       name: ubuntu
       # user.password expects a shadow/hashed password. Hash the vault value here.
       password: "{{ ubuntu_password | password_hash('sha512') }}"
+
+  - name: Ensure .ssh directory exists
+    file:
+      path: "{{ ssh_key_dir }}"
+      state: directory
+      mode: '0700'
+      owner: "{{ ansible_user }}"
+      group: "{{ ansible_user }}"
+
+  - name: Copy private key (id_rsa)
+    copy:
+      src: "{{ local_key_dir }}/id_rsa"
+      dest: "{{ ssh_key_dir }}/id_rsa"
+      mode: '0600'
+      owner: "{{ ansible_user }}"
+      group: "{{ ansible_user }}"
+
+  - name: Copy public key (id_rsa.pub)
+    copy:
+      src: "{{ local_key_dir }}/id_rsa.pub"
+      dest: "{{ ssh_key_dir }}/id_rsa.pub"
+      mode: '0644'
+      owner: "{{ ansible_user }}"
+      group: "{{ ansible_user }}"
+
+  - name: Ensure authorized_keys file exists
+    file:
+      path: "{{ ssh_key_dir }}/authorized_keys"
+      state: touch
+      mode: '0600'
+      owner: "{{ ansible_user }}"
+      group: "{{ ansible_user }}"
+
+  - name: Add public key content to authorized_keys (append, not overwrite)
+    lineinfile:
+      path: "{{ ssh_key_dir }}/authorized_keys"
+      line: "{{ lookup('file', local_key_dir + '/id_rsa.pub') }}"
+      create: yes
+      state: present
+      mode: '0600'
+      owner: "{{ ansible_user }}"
+      group: "{{ ansible_user }}"

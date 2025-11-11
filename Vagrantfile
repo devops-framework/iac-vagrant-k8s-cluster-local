@@ -5,9 +5,9 @@ Vagrant.configure("2") do |config|
 
   # Define cluster nodes: 1 master and 2 workers
   nodes = [
-    { name: "master",  ip: "192.168.56.20", hostname: "devops-master",  role: "containers" },
-    { name: "worker1", ip: "192.168.56.21", hostname: "devops-worker1", role: "containers" },
-    { name: "worker2", ip: "192.168.56.22", hostname: "devops-worker2", role: "containers" },
+    { name: "master",  ip: "192.168.56.20", hostname: "devops-master",  role: "master" },
+    { name: "worker1", ip: "192.168.56.21", hostname: "devops-worker1", role: "worker" },
+    { name: "worker2", ip: "192.168.56.22", hostname: "devops-worker2", role: "worker" },
   ]
 
   base_memory = 3072

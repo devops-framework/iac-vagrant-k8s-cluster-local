@@ -29,6 +29,16 @@ vagrant status
 vagrant up
 ```
 
+#### Stop VMs
+```bash
+vagrant suspend
+```
+
+#### Resume VMs
+```bash
+vagrant resume
+```
+
 #### Destroy VMs
 ```bash
 vagrant destroy -f 
@@ -36,3 +46,6 @@ vagrant destroy -f
 
 Ref:
 https://viblo.asia/p/cach-tao-kubernetesk8s-cluster-home-lab-bang-ubuntu-server-2404-qPoL7YjN4vk
+
+Create ssh_keys folder in root
+Copy private and public ssh key to ssh_keys folder
