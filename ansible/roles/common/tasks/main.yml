@@ -11,5 +11,4 @@
       - unzip
       - git
       - software-properties-common
-
     state: present

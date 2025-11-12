@@ -1,2 +1,5 @@
 # Vagrant temp dir
 .vagrant
+
+# SSH keys
+ssh_keys

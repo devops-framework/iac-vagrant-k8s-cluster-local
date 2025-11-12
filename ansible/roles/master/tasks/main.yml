@@ -1,0 +1,14 @@
+---
+- name: Initialize the cluster
+  shell: |
+    kubeadm init --control-plane-endpoint={{ item.hostname }}
+  with_items: "{{ cluster_hosts | selectattr('role','equalto','master') | list }}"
+
+- name: Setup kube config for vagrant user
+  shell: |
+    mkdir -p /home/ubuntu/.kube
+    cp -i /etc/kubernetes/admin.conf /home/ubuntu/.kube/config
+    chown ubuntu:ubuntu /home/ubuntu/.kube/config
+
+- name: Install Calico network plugin
+  shell: KUBECONFIG=/home/ubuntu/.kube/config kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/calico.yaml
