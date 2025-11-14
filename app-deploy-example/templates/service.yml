@@ -1,0 +1,24 @@
+{{- range $name, $cfg := .Values.components }}
+{{- if $cfg.containerPort }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "example-voting-app.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "example-voting-app.labels" $ | nindent 4 }}
+    component: {{ $name }}
+spec:
+  type: {{ $cfg.serviceType | default "ClusterIP" }}
+  selector:
+    app: {{ include "example-voting-app.name" $ }}
+    release: {{ $.Release.Name }}
+    component: {{ $name }}
+  ports:
+    - port: {{ $cfg.servicePort }}
+      targetPort: {{ $cfg.containerPort }}
+      {{- if and (eq $cfg.serviceType "NodePort") ($cfg.nodePort) }}
+      nodePort: {{ $cfg.nodePort }}
+      {{- end }}
+---
+{{- end }}
+{{- end }}

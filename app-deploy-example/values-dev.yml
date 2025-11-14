@@ -1,0 +1,51 @@
+components:
+  vote:
+    image: dockersamples/examplevotingapp_vote
+    replicas: 1
+    containerPort: 80   # port trong container
+    servicePort: 8080   # port service
+    serviceType: NodePort
+    nodePort: 31000
+
+  result:
+    image: dockersamples/examplevotingapp_result
+    replicas: 1
+    containerPort: 80
+    servicePort: 8081
+    serviceType: NodePort
+    nodePort: 31001
+
+  worker:
+    image: dockersamples/examplevotingapp_worker
+    replicas: 1
+
+  redis:
+    image: redis:alpine
+    replicas: 1
+    containerPort: 6379
+    servicePort: 6379
+    serviceType: ClusterIP
+    volumeMounts:
+      - name: redis-data
+        mountPath: /data
+    volumes:
+      - name: redis-data
+        emptyDir: {}
+
+  db:
+    image: postgres:15-alpine
+    replicas: 1
+    containerPort: 5432
+    servicePort: 5432
+    serviceType: ClusterIP
+    env:
+      - name: POSTGRES_USER
+        value: postgres
+      - name: POSTGRES_PASSWORD
+        value: postgres
+    volumeMounts:
+      - name: db-data
+        mountPath: /var/lib/postgresql/data
+    volumes:
+      - name: db-data
+        emptyDir: {}
