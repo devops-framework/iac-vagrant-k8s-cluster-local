@@ -1,0 +1,54 @@
+{{- range $name, $cfg := .Values.components }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "example-voting-app.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "example-voting-app.labels" $ | nindent 4 }}
+    component: {{ $name }}
+spec:
+  replicas: {{ $cfg.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ include "example-voting-app.name" $ }}
+      release: {{ $.Release.Name }}
+      component: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "example-voting-app.name" $ }}
+        release: {{ $.Release.Name }}
+        component: {{ $name }}
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: "{{ $cfg.image }}"
+          {{- if $cfg.containerPort }}
+          ports:
+            - containerPort: {{ $cfg.containerPort }}
+          {{- end }}
+          {{- if $cfg.env }}
+          env:
+            {{- range $cfg.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          {{- end }}
+          {{- if $cfg.volumeMounts }}
+          volumeMounts:
+            {{- range $cfg.volumeMounts }}
+            - name: {{ .name }}
+              mountPath: {{ .mountPath }}
+            {{- end }}
+          {{- end }}
+      {{- if $cfg.volumes }}
+      volumes:
+        {{- range $cfg.volumes }}
+        - name: {{ .name }}
+          {{- if .emptyDir }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+---
+{{- end }}

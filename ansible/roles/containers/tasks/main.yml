@@ -1,4 +1,19 @@
 ---
+### /etc/hosts configuration ###
+
+- name: Set /etc/hosts for all cluster nodes
+  become: true
+  lineinfile:
+    path: /etc/hosts
+    create: yes
+    line: "{{ item.ip }} {{ item.hostname }}"
+    state: present
+  with_items: "{{ cluster_hosts }}"
+  when: cluster_hosts is defined
+  tags: etc_hosts
+
+### Docker and Helm installation ###
+
 - name: Install Docker
   apt:
     name:
@@ -11,27 +26,6 @@
     name: ubuntu
     groups: docker
     append: yes
- 
-- name: Install containerd
-  ansible.builtin.apt:
-    name: containerd
-    state: present
-    update_cache: yes
-
-- name: Configure containerd to use systemd cgroup driver
-  ansible.builtin.shell: |
-    mkdir -p /etc/containerd
-    containerd config default > /etc/containerd/config.toml
-    # enable systemd cgroup driver
-    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml || true
-  args:
-    executable: /bin/bash
-
-- name: Restart and enable containerd
-  ansible.builtin.service:
-    name: containerd
-    state: restarted
-    enabled: yes
 
 - name: Install Helm
   shell: |
@@ -39,38 +33,111 @@
   args:
     executable: /bin/bash
 
-- name: Ensure br_netfilter module is loaded
-  ansible.builtin.modprobe:
+### Kubernetes prerequisites and configuration ###
+
+- name: Disable swap immediately
+  command: swapoff -a
+
+- name: Comment out swap entries in /etc/fstab
+  replace:
+    path: /etc/fstab
+    regexp: '^(.*\s+swap\s+.*)$'
+    replace: '# \1'
+
+- name: Load kernel module overlay
+  modprobe:
+    name: overlay
+    state: present
+
+- name: Load kernel module br_netfilter
+  modprobe:
     name: br_netfilter
     state: present
 
-- name: Ensure net.bridge.bridge-nf-call-iptables is set
-  ansible.builtin.sysctl:
-    name: net.bridge.bridge-nf-call-iptables
-    value: '1'
-    sysctl_set: yes
-    state: present
-    reload: yes
+- name: Ensure modules are loaded at boot (k8s.conf)
+  copy:
+    dest: /etc/modules-load.d/k8s.conf
+    content: |
+      overlay
+      br_netfilter
+    owner: root
+    group: root
+    mode: '0644'
 
-- name: Disable swap (temporary) and remove swap fstab entries
-  ansible.builtin.shell: |
-    swapoff -a
-    # comment out swap entries in /etc/fstab so swap stays disabled after reboot
-    sed -i.bak -r 's/^([^#].*\s+swap\s+)/#\1/' /etc/fstab || true
-  args:
-    executable: /bin/bash
+### Network settings for Kubernetes ###
 
-- name: Install apt-transport-https and ca-certificates
-  ansible.builtin.apt:
+- name: Set sysctl params for Kubernetes (kubernetes.conf)
+  copy:
+    dest: /etc/sysctl.d/kubernetes.conf
+    content: |
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.bridge.bridge-nf-call-iptables = 1
+      net.ipv4.ip_forward = 1
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload sysctl with all configs
+  command: sysctl --system
+
+### Containerd installation and configuration ###
+
+- name: Install prerequisites for containerd
+  apt:
     name:
+      - gnupg2
+      - software-properties-common
       - apt-transport-https
       - ca-certificates
     state: present
     update_cache: yes
-# Use the recommended keyring + signed-by approach for Kubernetes apt repo
-- name: Ensure gnupg is installed (needed to dearmor keys)
-  ansible.builtin.apt:
-    name: gnupg
+
+- name: Install containerd from Ubuntu repository
+  apt:
+    name: containerd
+    state: present
+
+- name: Create containerd config directory
+  file:
+    path: /etc/containerd
+    state: directory
+
+- name: Generate default containerd config
+  command: containerd config default
+  register: containerd_default
+  changed_when: false
+
+- name: Write config.toml
+  copy:
+    dest: /etc/containerd/config.toml
+    content: "{{ containerd_default.stdout }}"
+    mode: '0644'
+
+- name: Enable systemd cgroup driver
+  replace:
+    path: /etc/containerd/config.toml
+    regexp: 'SystemdCgroup = false'
+    replace: 'SystemdCgroup = true'
+  notify: Restart containerd
+
+- name: Enable & start containerd
+  systemd:
+    name: containerd
+    enabled: yes
+    state: started
+
+### Kubernetes packages installation ###
+
+- name: Install Kubernetes required packages
+  apt:
+    name:
+      - conntrack
+      - iptables
+      - socat
+      - ethtool
+      - ebtables
+      - arptables
+      - ipset
     state: present
     update_cache: yes
 
@@ -111,40 +178,3 @@
 
 - name: Hold kube packages to prevent automatic upgrades
   ansible.builtin.command: apt-mark hold kubelet kubeadm kubectl
-
-- name: Set /etc/hosts for all cluster nodes
-  become: true
-  lineinfile:
-    path: /etc/hosts
-    create: yes
-    line: "{{ item.ip }} {{ item.hostname }}"
-    state: present
-  with_items: "{{ cluster_hosts }}"
-  when: cluster_hosts is defined
-  tags: etc_hosts
-
-- name: Stop systemd-resolved
-  service:
-    name: systemd-resolved
-    state: stopped
-    enabled: no
-
-- name: Add public DNS servers
-  lineinfile:
-    path: /etc/resolv.conf
-    line: "{{ item }}"
-    state: present
-    insertafter: EOF
-  loop:
-    - "nameserver 8.8.8.8"
-    - "nameserver 1.1.1.1"
-
-- name: Restart containerd
-  service:
-    name: containerd
-    state: restarted
-
-- name: Restart kubelet
-  service:
-    name: kubelet
-    state: restarted

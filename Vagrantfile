@@ -1,6 +1,6 @@
 Vagrant.configure("2") do |config|
-  config.vm.box = "gyptazy/ubuntu22.04-arm64"
-  config.vm.box_version = "1.0.1"
+  config.vm.box = "bento/ubuntu-22.04"
+  config.vm.box_version = "202510.26.0"
   config.vm.boot_timeout = 600
 
   # Define cluster nodes: 1 master and 2 workers
@@ -39,7 +39,7 @@ Vagrant.configure("2") do |config|
           node_name: n[:hostname],
           cluster_hosts: nodes
         }
-        ansible.verbose = "vvv"
+        ansible.verbose = "vv"
       end
     end
   end

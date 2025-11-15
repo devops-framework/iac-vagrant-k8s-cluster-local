@@ -11,6 +11,7 @@ Provisioned with **Ansible** to install:
 - [VMware Fusion 13.5+](https://customerconnect.vmware.com/)
 - [Vagrant](https://developer.hashicorp.com/vagrant/downloads)
 - [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html)
+- [Vagrant base image](https://portal.cloud.hashicorp.com/vagrant/discover?architectures=arm64&providers=%5B%22vmware_fusion%22%2C%22vmware_desktop%22%5D&query=ubuntu)
 
 Install via Homebrew:
 ```bash
@@ -31,6 +32,7 @@ vagrant up
 
 #### Stop VMs
 ```bash
+vagrant halt # Recommend
 vagrant suspend
 ```
 
@@ -49,3 +51,12 @@ https://viblo.asia/p/cach-tao-kubernetesk8s-cluster-home-lab-bang-ubuntu-server-
 
 Create ssh_keys folder in root
 Copy private and public ssh key to ssh_keys folder
+
+Test helm:
+
+```bash
+helm template vote-app-100 ./ -n vote-app -f values-dev.yml
+helm install vote-app-100 ./ -n vote-app -f values-dev.yml
+helm upgrade vote-app-100 ./ -n vote-app -f values-dev.yml
+helm uninstall vote-app-1.0.0 ./ -n vote-app
+```
