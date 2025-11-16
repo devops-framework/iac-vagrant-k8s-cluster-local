@@ -33,6 +33,7 @@ components:
         emptyDir: {}
 
   db:
+    type: postgres
     image: postgres:15-alpine
     replicas: 1
     containerPort: 5432

@@ -55,8 +55,11 @@ Copy private and public ssh key to ssh_keys folder
 Test helm:
 
 ```bash
-helm template vote-app-100 ./ -n vote-app -f values-dev.yml
+helm template vote-app-100 ./ -n vote-app -f values-dev.yml -s templates/deployment.yaml
+
 helm install vote-app-100 ./ -n vote-app -f values-dev.yml
 helm upgrade vote-app-100 ./ -n vote-app -f values-dev.yml
-helm uninstall vote-app-1.0.0 ./ -n vote-app
+helm uninstall vote-app-100 -n vote-app
+
+kubectl delete all --all -n <tên-namespace>
 ```
