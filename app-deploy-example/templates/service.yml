@@ -3,18 +3,18 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "example-voting-app.fullname" $ }}-{{ $name }}
+  name: {{ $name }}
   labels:
+    app: {{ $name }}
     {{- include "example-voting-app.labels" $ | nindent 4 }}
-    component: {{ $name }}
 spec:
   type: {{ $cfg.serviceType | default "ClusterIP" }}
   selector:
-    app: {{ include "example-voting-app.name" $ }}
-    release: {{ $.Release.Name }}
-    component: {{ $name }}
+    app: {{ $name }}
+    {{- include "example-voting-app.labels" $ | nindent 4 }}
   ports:
-    - port: {{ $cfg.servicePort }}
+    - name: {{ printf "%s-service" $name }}
+      port: {{ $cfg.servicePort }}
       targetPort: {{ $cfg.containerPort }}
       {{- if and (eq $cfg.serviceType "NodePort") ($cfg.nodePort) }}
       nodePort: {{ $cfg.nodePort }}

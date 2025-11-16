@@ -2,30 +2,29 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "example-voting-app.fullname" $ }}-{{ $name }}
+  name: {{ $name }}
   labels:
+    app: {{ $name }}
     {{- include "example-voting-app.labels" $ | nindent 4 }}
-    component: {{ $name }}
 spec:
   replicas: {{ $cfg.replicas | default 1 }}
   selector:
     matchLabels:
-      app: {{ include "example-voting-app.name" $ }}
-      release: {{ $.Release.Name }}
-      component: {{ $name }}
+      app: {{ $name }}
+      {{- include "example-voting-app.labels" $ | nindent 6 }}
   template:
     metadata:
       labels:
-        app: {{ include "example-voting-app.name" $ }}
-        release: {{ $.Release.Name }}
-        component: {{ $name }}
+        app: {{ $name }}
+        {{- include "example-voting-app.labels" $ | nindent 8 }}
     spec:
       containers:
-        - name: {{ $name }}
+        - name: {{ $cfg.type | default $name }}
           image: "{{ $cfg.image }}"
           {{- if $cfg.containerPort }}
           ports:
             - containerPort: {{ $cfg.containerPort }}
+              name: {{ $cfg.type | default $name }}
           {{- end }}
           {{- if $cfg.env }}
           env:

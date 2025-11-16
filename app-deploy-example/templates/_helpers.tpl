@@ -9,7 +9,6 @@ Generate chart name + release name prefix
 Common labels
 */}}
 {{- define "example-voting-app.labels" -}}
-app: {{ include "example-voting-app.name" . }}
 release: {{ .Release.Name }}
 managed-by: {{ .Release.Service }}
 {{- end }}
