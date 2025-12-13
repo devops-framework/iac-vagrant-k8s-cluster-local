@@ -38,16 +38,27 @@ spec:
             {{- range $cfg.volumeMounts }}
             - name: {{ .name }}
               mountPath: {{ .mountPath }}
+            - name: vote-app-pv
+              mountPath: /shared-data-vol
+            - name: test-backend-override-config
+              mountPath: /shared-data-vol/override-setting.txt
+              subPath: override-setting.txt
             {{- end }}
           {{- end }}
       {{- if $cfg.volumes }}
       volumes:
         {{- range $cfg.volumes }}
         - name: {{ .name }}
-          {{- if .emptyDir }}
+          {{- if hasKey . "emptyDir" }}
           emptyDir: {}
           {{- end }}
         {{- end }}
+        - name: vote-app-pv
+          persistentVolumeClaim:
+            claimName: vote-app-pvc
+        - name: test-backend-override-config
+          configMap:
+            name: test-override-setting-config
       {{- end }}
 ---
 {{- end }}
