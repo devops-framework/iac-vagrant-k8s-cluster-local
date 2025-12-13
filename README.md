@@ -55,11 +55,23 @@ Copy private and public ssh key to ssh_keys folder
 Test helm:
 
 ```bash
-helm template vote-app-100 ./ -n vote-app -f values-dev.yml -s templates/deployment.yaml
+helm template vote-app-100 ./ -n vote-app -f values-dev.yml -s templates/deployment.yml
 
+# Deploy:
 helm install vote-app-100 ./ -n vote-app -f values-dev.yml
 helm upgrade vote-app-100 ./ -n vote-app -f values-dev.yml
+
+# Debug
+kubectl get pod -n vote-app -o wide # Get name
+kubectl exec -it xxx -n vote-app -- sh # ssh inside the pod
+
+# Destroy
 helm uninstall vote-app-100 -n vote-app
 
+# Cleanup all resources in namespace
 kubectl delete all --all -n <tên-namespace>
+
 ```
+Page: 
+Vote: http://192.168.56.20:31000
+Result: http://192.168.56.20:31001
