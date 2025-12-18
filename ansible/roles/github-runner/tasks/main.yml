@@ -1,0 +1,6 @@
+---
+- name: Hello runner
+  shell: |
+    echo "Hello runner"
+  args:
+    executable: /bin/bash

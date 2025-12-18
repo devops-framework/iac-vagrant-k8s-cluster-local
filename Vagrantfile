@@ -4,10 +4,32 @@ Vagrant.configure("2") do |config|
   config.vm.boot_timeout = 600
 
   # Define cluster nodes: 1 master and 2 workers
+  # Use `roles` (array) so a node can receive multiple roles, e.g. master also being a worker
   nodes = [
-    { name: "master",  ip: "192.168.56.20", hostname: "devops-master",  role: "master" },
-    { name: "worker1", ip: "192.168.56.21", hostname: "devops-worker1", role: "worker" },
-    { name: "worker2", ip: "192.168.56.22", hostname: "devops-worker2", role: "worker" },
+    { 
+      name: "master",  
+      ip: "192.168.56.20", 
+      hostname: "devops-master",
+      roles: ["master", "containers"] 
+    },
+    { 
+      name: "worker1", 
+      ip: "192.168.56.21", 
+      hostname: "devops-worker1", 
+      roles: ["worker", "containers"] 
+    },
+    { 
+      name: "worker2", 
+      ip: "192.168.56.22", 
+      hostname: "devops-worker2", 
+      roles: ["worker", "containers"] 
+    },
+    { 
+      name: "runner1", 
+      ip: "192.168.56.10", 
+      hostname: "devops-github-runner-1", 
+      roles: ["github-runner"] 
+    },
   ]
 
   base_memory = 3072
@@ -33,8 +55,10 @@ Vagrant.configure("2") do |config|
         ansible.become = true
         # Use a vault password file on the host (create ~/.vault_pass.txt with the vault password)
         ansible.vault_password_file = '.vault_pass.txt'
+        # Pass selected_roles as an array. If older node entries use :role instead of :roles,
+        # fall back to that so this remains backward compatible.
         ansible.extra_vars = {
-          selected_role: n[:role],
+          selected_roles: (n[:roles] || [n[:role]]),
           node_role: n[:name],
           node_name: n[:hostname],
           cluster_hosts: nodes

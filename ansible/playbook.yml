@@ -4,5 +4,10 @@
   roles:
     - role: common
     - role: users
-    - role: containers
-    - role: "{{ selected_role }}"
+  tasks:
+    - name: Include roles listed in host variable selected_roles (if any)
+      include_role:
+        name: "{{ item }}"
+      loop: "{{ selected_roles | default([]) }}"
+      when: selected_roles is defined
+      tags: always
