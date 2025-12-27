@@ -1,22 +1,22 @@
 ---
-  - name: Add ubuntu user
+  - name: "Add {{ ansible_user }} user"
     user:
-      name: ubuntu
+      name: "{{ ansible_user }}"
       groups: sudo
       shell: /bin/bash
       create_home: yes
 
-  - name: Allow ubuntu to use sudo without password
+  - name: "Allow {{ ansible_user }} to use sudo without password"
     copy:
-      dest: /etc/sudoers.d/ubuntu
-      content: "ubuntu ALL=(ALL) NOPASSWD:ALL\n"
+      dest: "/etc/sudoers.d/{{ ansible_user }}"
+      content: "{{ ansible_user }} ALL=(ALL) NOPASSWD:ALL\n"
       owner: root
       group: root
       mode: 0440
 
-  - name: Set authorized key for ubuntu
+  - name: "Set authorized key for {{ ansible_user }}"
     authorized_key:
-      user: ubuntu
+      user: "{{ ansible_user }}"
       state: present
       key: "{{ lookup('file', '/home/vagrant/.ssh/authorized_keys') }}"
 

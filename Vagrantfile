@@ -25,9 +25,21 @@ Vagrant.configure("2") do |config|
       roles: ["worker", "containers"] 
     },
     { 
-      name: "runner1", 
-      ip: "192.168.56.10", 
-      hostname: "devops-github-runner-1", 
+      name: "rke2-control-plane", 
+      ip: "192.168.56.11", 
+      hostname: "rke2-server", 
+      roles: ["rke2-server"] 
+    },
+    { 
+      name: "rke2-worker", 
+      ip: "192.168.56.12", 
+      hostname: "rke2-agent", 
+      roles: ["rke2-agent"] 
+    },
+    { 
+      name: "rke2-vm-test", 
+      ip: "192.168.56.13", 
+      hostname: "rke2-vm-test", 
       roles: ["github-runner"] 
     },
   ]
