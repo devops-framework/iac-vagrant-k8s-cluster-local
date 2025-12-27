@@ -1,0 +1,54 @@
+---
+- name: Install Helm
+  shell: |
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  args:
+    executable: /bin/bash
+
+- name: Run RKE2 installer for server
+  shell: |
+    curl -sfL https://get.rke2.io | sudo sh -
+
+- name: Enable and start RKE2 server service
+  systemd:
+    name: "rke2-server.service"
+    enabled: yes
+    state: started
+
+- name: "Gather system service facts"
+  ansible.builtin.service_facts:
+
+- name: "Display RKE2 Server operational status"
+  ansible.builtin.debug:
+    msg: "RKE2 Server is currently {{ ansible_facts.services['rke2-server.service'].state }}"
+
+- name: "Copy kubectl binary to system bin directory"
+  # Use remote_src: yes to copy the file directly on the target server
+  ansible.builtin.copy:
+    src: /var/lib/rancher/rke2/bin/kubectl
+    dest: /usr/local/bin/kubectl
+    mode: '0755'
+    remote_src: yes
+
+- name: "Create .kube directory in home of user: {{ ansible_user }}"
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0700'
+
+- name: "Copy rke2.yaml to {{ ansible_user }} kubeconfig"
+  ansible.builtin.copy:
+    src: /etc/rancher/rke2/rke2.yaml
+    dest: "/home/{{ ansible_user }}/.kube/config"
+    remote_src: yes
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0600' # Security: only the owner can read this config
+
+- name: "Add KUBECONFIG environment variable to {{ ansible_user }} .bashrc"
+  ansible.builtin.lineinfile:
+    path: "/home/{{ ansible_user }}/.bashrc"
+    line: 'export KUBECONFIG=~/.kube/config'
+    state: present

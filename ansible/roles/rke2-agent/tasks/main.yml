@@ -1,0 +1,37 @@
+---
+- name: Install RKE2 agent
+  shell: |
+    curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh -
+
+- name: Read RKE2 server node token
+  shell: |
+    ssh -i /home/{{ ansible_user }}/.ssh/id_rsa \
+        -o StrictHostKeyChecking=no \
+        {{ ansible_user }}@{{ rke2_server_ip }} \
+        "sudo cat /var/lib/rancher/rke2/server/node-token"
+  register: join_cmd_raw
+  changed_when: false
+
+- name: Set decoded token
+  set_fact:
+    rke2_token: "{{ join_cmd_raw.stdout | trim }}"
+
+- name: Ensure RKE2 config directory exists
+  ansible.builtin.file:
+    path: /etc/rancher/rke2
+    state: directory
+    mode: '0755'
+
+- name: Create RKE2 agent config
+  ansible.builtin.copy:
+    dest: /etc/rancher/rke2/config.yaml
+    content: |
+      server: https://{{ rke2_server_ip }}:9345
+      token: {{ rke2_token }}
+    mode: '0600'
+
+- name: Enable and start rke2-agent
+  systemd:
+    name: rke2-agent
+    enabled: yes
+    state: started
