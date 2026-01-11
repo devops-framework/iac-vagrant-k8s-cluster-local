@@ -37,10 +37,10 @@ Vagrant.configure("2") do |config|
       roles: ["rke2-agent"] 
     },
     { 
-      name: "rke2-vm-test", 
-      ip: "192.168.56.13", 
-      hostname: "rke2-vm-test", 
-      roles: ["github-runner"] 
+      name: "vip-lb",
+      ip: "192.168.56.13",
+      hostname: "vip-lb",
+      roles: ["vip_lb", "github-runner"]
     },
   ]
 
