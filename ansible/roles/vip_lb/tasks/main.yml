@@ -1,0 +1,42 @@
+---
+- name: Install Keepalived and HAProxy
+  apt:
+    name:
+      - keepalived
+      - haproxy
+    state: present
+    update_cache: yes
+
+- name: Copy Keepalived configuration
+  template:
+    src: ../vip_conf/keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+  notify: Restart Keepalived
+
+- name: Append K8s configuration to HAProxy
+  blockinfile:
+    path: /etc/haproxy/haproxy.cfg
+    marker: "# {mark} ANSIBLE MANAGED BLOCK FOR K8S #"
+    block: |
+      # --- Cấu hình cho App 1 ---
+      frontend app1_frontend
+          bind *:80
+          mode tcp
+          default_backend app1_backend
+
+      backend app1_backend
+          mode tcp
+          server worker1 192.168.56.21:31000 check
+          server worker2 192.168.56.22:31000 check
+
+      # --- Cấu hình cho App 2 ---
+      frontend app2_frontend
+          bind *:81
+          mode tcp
+          default_backend app2_backend
+
+      backend app2_backend
+          mode tcp
+          server worker1 192.168.56.22:31001 check
+          server worker2 192.168.56.22:31001 check
+  notify: Restart HAProxy
