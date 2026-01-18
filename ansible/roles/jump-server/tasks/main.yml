@@ -1,0 +1,48 @@
+- name: Ensure ssh client is present (for remote operations to control plane)
+  apt:
+    name: openssh-client
+    state: present
+    update_cache: yes
+
+- name: Wait for control plane SSH to be available
+  wait_for:
+    host: "{{ rke2_server_ip }}"
+    port: 22
+    timeout: 300
+    state: started
+
+- name: Wait for Kubernetes API on control plane to be available
+  wait_for:
+    host: "{{ rke2_server_ip }}"
+    port: 6443
+    timeout: 300
+    state: started
+
+- name: Copy install script (plain file) to vip-lb
+  copy:
+    src: ../scripts/install_argocd_on_control.sh
+    dest: /tmp/install_argocd_on_control.sh
+    mode: '0755'
+
+- name: Copy login script (plain file) to vip-lb
+  copy:
+    src: ../scripts/login_argocd_from_vip.sh
+    dest: /tmp/login_argocd_from_vip.sh
+    mode: '0755'
+
+- name: Run control-plane install script via SSH (from vip-lb)
+  shell: |
+    ssh -o StrictHostKeyChecking=no -i /home/{{ ansible_user }}/.ssh/id_rsa {{ ansible_user }}@{{ rke2_server_ip }} "bash -s -- {{ ansible_user }}" < /tmp/install_argocd_on_control.sh
+  args:
+    executable: /bin/bash
+  register: argo_install
+  until: argo_install.rc == 0
+  retries: 5
+  delay: 15
+
+- name: Run login script on vip-lb (best-effort)
+  shell: /tmp/login_argocd_from_vip.sh {{ rke2_server_ip }} {{ ansible_user }}
+  args:
+    executable: /bin/bash
+  register: argo_login
+  ignore_errors: yes
