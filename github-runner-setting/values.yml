@@ -1,0 +1,13 @@
+## values.yml
+containerMode:
+  type: "dind"
+
+template:
+  spec:
+    serviceAccountName: staging-runner-sa # Bắt buộc có để kubectl chạy được
+    containers:
+      - name: runner
+        image: tantran0411/github-runner-ci:v1 # Image ARM của bạn
+        command: ["/home/runner/run.sh"]
+        securityContext:
+          readOnlyRootFilesystem: false # Sửa lỗi mount ban nãy

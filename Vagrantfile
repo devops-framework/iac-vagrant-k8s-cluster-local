@@ -65,7 +65,7 @@ Vagrant.configure("2") do |config|
       node.vm.network "private_network", ip: n[:ip]
 
       node.vm.provider "vmware_desktop" do |vmw|
-        vmw.gui    = true
+        vmw.gui    = false
         # Allow per-node overrides: use n[:memory] / n[:cpus] when provided, otherwise fall back to base values
         vmw.memory = n[:memory] || base_memory
         vmw.cpus   = n[:cpus] || base_cpus
