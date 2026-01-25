@@ -75,3 +75,28 @@ kubectl delete all --all -n <tên-namespace>
 Page: 
 Vote: http://192.168.56.20:31000
 Result: http://192.168.56.20:31001
+
+Setups Github Runner k8s:
+ARC systems:
+```bash
+helm install arc \
+--namespace "arc-systems" \
+--create-namespace \
+oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
+```
+ARC runner:
+```bash
+INSTALLATION_NAME="staging-runner-set"
+NAMESPACE="arc-runners"
+GITHUB_CONFIG_URL="https://github.com/tranthaiminhtansoft/iac-vagrant-k8s-cluster-local"
+GITHUB_PAT="ghp_xxxx"
+helm upgrade --install "${INSTALLATION_NAME}" \
+-f values.yml \
+--namespace "${NAMESPACE}" \
+--create-namespace \
+--set githubConfigUrl="${GITHUB_CONFIG_URL}" \
+--set githubConfigSecret.github_token="${GITHUB_PAT}" \
+oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+```
+
+Apply cái runner-rbac.yml trong cluster để ràng buộc serviceaccount

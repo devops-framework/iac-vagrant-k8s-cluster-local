@@ -1,0 +1,27 @@
+name: Deploy Nginx Fast
+on: 
+  workflow_dispatch:
+
+jobs:
+  deploy-nginx:
+    runs-on: staging-runner-set
+    steps:
+      - name: Deploy trực tiếp bằng lệnh run
+        run: |
+          for cmd in curl unzip jq git wget helm kubectl; do
+            if command -v $cmd >/dev/null 2>&1; then
+              echo "✅ $cmd: $( $cmd --version | head -n 1 )"
+            else
+              echo "❌ $cmd: Chưa cài đặt"
+            fi
+          done
+
+          # Test Docker
+          docker ps
+          
+          # Deploy 1 con nginx "nhẹ máy" cho worker ARM
+          kubectl run nginx-test \
+            --image=nginx:alpine \
+            --namespace=frontend-stg \
+            --port=80 \
+            --overrides='{"spec": {"resources": {"limits": {"memory": "128Mi", "cpu": "100m"}}}}'

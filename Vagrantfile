@@ -5,42 +5,51 @@ Vagrant.configure("2") do |config|
 
   # Define cluster nodes: 1 master and 2 workers
   # Use `roles` (array) so a node can receive multiple roles, e.g. master also being a worker
+  # You can optionally set per-node `memory` (MB) and `cpus` here. If omitted, the base values are used.
   nodes = [
-    { 
-      name: "master",  
-      ip: "192.168.56.20", 
-      hostname: "devops-master",
-      roles: ["master", "containers"] 
+    # {
+    #   name: "master",
+    #   ip: "192.168.56.20",
+    #   hostname: "devops-master",
+    #   roles: ["master", "containers"]
+    # },
+    # {
+    #   name: "worker1",
+    #   ip: "192.168.56.21",
+    #   hostname: "devops-worker1",
+    #   roles: ["worker", "containers"],
+    # },
+    # {
+    #   name: "worker2",
+    #   ip: "192.168.56.22",
+    #   hostname: "devops-worker2",
+    #   roles: ["worker", "containers"]
+    # },
+    {
+      name: "rke2-control-plane-001",
+      ip: "192.168.56.11",
+      hostname: "rke2-server-001",
+      roles: ["rke2-server"]
     },
-    { 
-      name: "worker1", 
-      ip: "192.168.56.21", 
-      hostname: "devops-worker1", 
-      roles: ["worker", "containers"] 
+    {
+      name: "rke2-worker-001",
+      ip: "192.168.56.12",
+      hostname: "rke2-agent-001",
+      roles: ["rke2-agent"]
     },
-    { 
-      name: "worker2", 
-      ip: "192.168.56.22", 
-      hostname: "devops-worker2", 
-      roles: ["worker", "containers"] 
-    },
-    { 
-      name: "rke2-control-plane", 
-      ip: "192.168.56.11", 
-      hostname: "rke2-server", 
-      roles: ["rke2-server"] 
-    },
-    { 
-      name: "rke2-worker", 
-      ip: "192.168.56.12", 
-      hostname: "rke2-agent", 
-      roles: ["rke2-agent"] 
-    },
-    { 
-      name: "vip-lb",
+    {
+      name: "rke2-worker-002",
       ip: "192.168.56.13",
+      hostname: "rke2-agent-002",
+      roles: ["rke2-agent"]
+    },
+    {
+      name: "vip-lb",
+      ip: "192.168.56.14",
       hostname: "vip-lb",
-      roles: ["vip_lb", "github-runner"]
+      roles: ["vip_lb", "jump-server"],
+      memory: 1024,
+      cpus: 1
     },
   ]
 
@@ -56,9 +65,10 @@ Vagrant.configure("2") do |config|
       node.vm.network "private_network", ip: n[:ip]
 
       node.vm.provider "vmware_desktop" do |vmw|
-        vmw.gui    = true
-        vmw.memory = base_memory
-        vmw.cpus   = base_cpus
+        vmw.gui    = false
+        # Allow per-node overrides: use n[:memory] / n[:cpus] when provided, otherwise fall back to base values
+        vmw.memory = n[:memory] || base_memory
+        vmw.cpus   = n[:cpus] || base_cpus
       end
 
       # Run the Ansible playbook inside each guest (ansible_local)

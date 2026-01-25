@@ -26,6 +26,6 @@
 
       backend app1_backend
           mode tcp
-          server worker1 192.168.56.21
-          server worker2 192.168.56.22
+          server worker1 192.168.56.12
+          server worker2 192.168.56.13
   notify: Restart HAProxy
