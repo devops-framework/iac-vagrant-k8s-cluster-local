@@ -89,7 +89,7 @@ ARC runner:
 INSTALLATION_NAME="staging-runner-set"
 NAMESPACE="arc-runners"
 GITHUB_CONFIG_URL="https://github.com/tranthaiminhtansoft/iac-vagrant-k8s-cluster-local"
-GITHUB_PAT="ghp_xxxx"
+GITHUB_PAT="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"
 helm upgrade --install "${INSTALLATION_NAME}" \
 -f values.yml \
 --namespace "${NAMESPACE}" \

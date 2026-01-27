@@ -46,3 +46,62 @@
     executable: /bin/bash
   register: argo_login
   ignore_errors: yes
+
+# --- PHÂN QUYỀN RBAC (Dùng file template hoặc gộp trực tiếp) ---
+- name: Copy RBAC file to control plane
+  ansible.builtin.copy:
+    src: "../../../../github-runner-setting/runner-rbac.yml"
+    dest: "/tmp/rbac-runner.yaml"
+    mode: '0644'
+  delegate_to: "{{ rke2_server_ip }}"
+
+- name: Apply RBAC on control plane using kubectl
+  become: yes
+  ansible.builtin.shell: |
+    kubectl apply -f /tmp/rbac-runner.yaml
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ rke2_server_ip }}"
+
+# --- CÀI ĐẶT ARC (CONTROLLER) ---
+- name: Install ARC Controller (helm) on control plane
+  delegate_to: "{{ rke2_server_ip }}"
+  become: yes
+  ansible.builtin.shell: |
+    helm upgrade --install arc oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller \
+      --namespace arc-systems --create-namespace
+  args:
+    executable: /bin/bash
+
+- name: Install GitHub Runner Scale Sets for multiple repos via helm on control plane
+  block:
+    - name: Write values file for runner {{ item.runner_name }} on control plane
+      delegate_to: "{{ rke2_server_ip }}"
+      ansible.builtin.copy:
+        content: |
+          githubConfigUrl: "{{ item.github_repo }}"
+          githubConfigSecret:
+            github_token: "{{ github_pat }}"
+          containerMode:
+            type: "dind"
+          template:
+            spec:
+              serviceAccountName: "{{ item.serviceAccountName }}"
+              containers:
+                - name: runner
+                  image: "{{ item.custom_image }}"
+                  command: ["/home/runner/run.sh"]
+                  securityContext:
+                    readOnlyRootFilesystem: false
+        dest: "/tmp/{{ item.runner_name }}-values.yaml"
+        mode: '0644'
+
+    - name: Deploy runner chart {{ item.runner_name }} on control plane
+      delegate_to: "{{ rke2_server_ip }}"
+      become: yes
+      ansible.builtin.shell: |
+        helm upgrade --install {{ item.runner_name }} oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set \
+          --namespace arc-runners --create-namespace --values /tmp/{{ item.runner_name }}-values.yaml
+      args:
+        executable: /bin/bash
+  loop: "{{ github_runner_configs }}"
