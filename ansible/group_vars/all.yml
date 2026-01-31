@@ -4,3 +4,13 @@ local_key_dir: "{{ playbook_dir }}/../ssh_keys"
 master_hostname: "devops-master"
 # master_ip: "192.168.56.20"
 rke2_server_ip: "192.168.56.11"
+
+# Github Runner Configuration
+github_pat: "xxx"
+
+github_runner_configs:
+  - runner_name: "stg-ci-runner-set"
+    custom_image: "tantran0411/github-runner-ci:v1"
+    github_repo: "https://github.com/tranthaiminhtansoft/iac-vagrant-k8s-cluster-local"
+    serviceAccountName: "staging-runner-sa"
+    

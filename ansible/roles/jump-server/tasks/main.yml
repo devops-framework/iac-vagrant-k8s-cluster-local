@@ -32,7 +32,9 @@
 
 - name: Run control-plane install script via SSH (from vip-lb)
   shell: |
-    ssh -o StrictHostKeyChecking=no -i /home/{{ ansible_user }}/.ssh/id_rsa {{ ansible_user }}@{{ rke2_server_ip }} "bash -s -- {{ ansible_user }}" < /tmp/install_argocd_on_control.sh
+    ssh -o StrictHostKeyChecking=no \
+      -i /home/{{ ansible_user }}/.ssh/id_rsa {{ ansible_user }}@{{ rke2_server_ip }} \
+      "bash -s -- {{ ansible_user }}" < /tmp/install_argocd_on_control.sh
   args:
     executable: /bin/bash
   register: argo_install
@@ -46,3 +48,33 @@
     executable: /bin/bash
   register: argo_login
   ignore_errors: yes
+
+- name: Apply RBAC on control plane using kubectl
+  shell: |
+    ssh -o StrictHostKeyChecking=no \
+      -i /home/{{ ansible_user }}/.ssh/id_rsa {{ ansible_user }}@{{ rke2_server_ip }} \
+      "kubectl --kubeconfig=/home/{{ ansible_user }}/.kube/config apply -f /tmp/rbac-runner.yaml"
+  args:
+    executable: /bin/bash
+
+- name: Install ARC Controller (helm) on control plane
+  shell: |
+    ssh -o StrictHostKeyChecking=no \
+      -i /home/{{ ansible_user }}/.ssh/id_rsa {{ ansible_user }}@{{ rke2_server_ip }} \
+      "helm upgrade --install arc oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller \
+        --namespace arc-systems \
+        --create-namespace"
+  args:
+    executable: /bin/bash
+
+- name: Deploy runner charts for GitHub runners on control plane
+  shell: |
+    ssh -o StrictHostKeyChecking=no \
+      -i /home/{{ ansible_user }}/.ssh/id_rsa {{ ansible_user }}@{{ rke2_server_ip }} \
+      "helm upgrade --install {{ item.runner_name }} oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set \
+        --namespace arc-runners \
+        --create-namespace" \
+        --values /tmp/{{ item.runner_name }}-values.yaml
+  args:
+    executable: /bin/bash
+  loop: "{{ github_runner_configs }}"
