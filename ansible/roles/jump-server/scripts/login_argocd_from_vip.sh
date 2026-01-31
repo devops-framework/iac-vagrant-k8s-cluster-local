@@ -13,10 +13,21 @@ if [ -z "$CONTROL_IP" ]; then
 fi
 
 # Find NodePort for argocd-server
-NODEPORT=$(ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" "$SSH_USER@$CONTROL_IP" "kubectl --kubeconfig=/home/${ANSIBLE_USER}/.kube/config -n argocd get svc argocd-server -o jsonpath='{.spec.ports[?(@.port==443)].nodePort}'" || ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" "$SSH_USER@$CONTROL_IP" "kubectl --kubeconfig=/home/${ANSIBLE_USER}/.kube/config -n argocd get svc argocd-server -o jsonpath='{.spec.ports[0].nodePort}'" )
+NODEPORT=$(ssh -o StrictHostKeyChecking=no \
+               -i "$SSH_KEY" "$SSH_USER@$CONTROL_IP" \
+               "kubectl --kubeconfig=/home/${ANSIBLE_USER}/.kube/config \
+                        -n argocd get svc argocd-server \
+                        -o jsonpath='{.spec.ports[?(@.port==443)].nodePort}'" \
+                        || ssh -o StrictHostKeyChecking=no \
+                               -i "$SSH_KEY" "$SSH_USER@$CONTROL_IP" \
+                               "kubectl --kubeconfig=/home/${ANSIBLE_USER}/.kube/config \
+                                        -n argocd get svc argocd-server \
+                                        -o jsonpath='{.spec.ports[0].nodePort}'" )
 
 # Read initial password saved on control plane
-PASS=$(ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" "$SSH_USER@$CONTROL_IP" "cat /home/${ANSIBLE_USER}/argocd_initial_admin_password.txt" 2>/dev/null || true)
+PASS=$(ssh -o StrictHostKeyChecking=no \
+           -i "$SSH_KEY" "$SSH_USER@$CONTROL_IP" \
+           "cat /home/${ANSIBLE_USER}/argocd_initial_admin_password.txt" 2>/dev/null || true)
 
 if [ -z "$NODEPORT" ]; then
   echo "Could not determine ArgoCD NodePort" >&2

@@ -52,3 +52,30 @@
     path: "/home/{{ ansible_user }}/.bashrc"
     line: 'export KUBECONFIG=~/.kube/config'
     state: present
+
+- name: Copy RBAC file
+  copy:
+    src: "../../../../github-runner-setting/runner-rbac.yml"
+    dest: "/tmp/rbac-runner.yaml"
+    mode: '0644'
+
+- name: Write values files for GitHub runners
+  copy:
+    content: |
+      githubConfigUrl: "{{ item.github_repo }}"
+      githubConfigSecret:
+        github_token: "{{ github_pat }}"
+      containerMode:
+        type: "dind"
+      template:
+        spec:
+          serviceAccountName: "{{ item.serviceAccountName }}"
+          containers:
+            - name: runner
+              image: "{{ item.custom_image }}"
+              command: ["/home/runner/run.sh"]
+              securityContext:
+                readOnlyRootFilesystem: false
+    dest: "/tmp/{{ item.runner_name }}-values.yaml"
+    mode: '0644'
+  loop: "{{ github_runner_configs }}"

@@ -6,7 +6,8 @@ master_hostname: "devops-master"
 rke2_server_ip: "192.168.56.11"
 
 # Github Runner Configuration
-github_pat: "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"    # Thay thế bằng token thực tế của bạn
+github_pat: "xxx"
+
 github_runner_configs:
   - runner_name: "stg-ci-runner-set"
     custom_image: "tantran0411/github-runner-ci:v1"

@@ -4,7 +4,7 @@ on:
 
 jobs:
   deploy-nginx:
-    runs-on: staging-runner-set
+    runs-on: stg-ci-runner-set
     steps:
       - name: Deploy trực tiếp bằng lệnh run
         run: |

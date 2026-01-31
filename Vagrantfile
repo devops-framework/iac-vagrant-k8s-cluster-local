@@ -53,7 +53,7 @@ Vagrant.configure("2") do |config|
     },
   ]
 
-  base_memory = 3072
+  base_memory = 3048
   base_cpus = 2
 
   nodes.each do |n|
