@@ -20,6 +20,63 @@ brew install ansible
 vagrant plugin install vagrant-vmware-desktop
 ```
 
+## GUIDELINES
+
+### 🛠 Project Architecture
+* **Nodes:** 1 Master, 2 Workers, 1 Load Balancer (VIP-LB).
+* **Stack:** RKE2, ArgoCD, GitHub Actions Runner Controller (ARC).
+* **Automation:** Vagrant for Infrastructure, Ansible for Configuration Management.
+#### Pre-installation
+Before spinning up the cluster, you must configure your secrets and environment variables.
+
+* **Configure GitHub PAT:**
+  Open `ansible/group_vars/all.yml` and provide your GitHub Personal Access Token (PAT). This is required for the Actions Runner Controller.
+  ```yaml
+  github_pat: "ghp_your_secret_token_here"
+  ```
+
+Ensure you have the necessary Ansible collections on your Mac:
+
+```bash
+ansible-galaxy collection install ansible.posix kubernetes.core
+```
+
+#### Installation
+
+Step 1: Provision Virtual Machines
+Start the VMs defined in the Vagrantfile.
+```bash
+vagrant up
+```
+
+Step 2: Verify Connectivity
+Ensure that Ansible can reach all 4 nodes via SSH.
+
+```bash
+ansible all -m ping
+```
+
+Step 3: Deploy Kubernetes Cluster
+Execute the main playbook to install RKE2, ArgoCD, and Runners. We use --flush-cache to ensure a clean state of system facts.
+
+```bash
+ansible-playbook ansible/playbook.yml --flush-cache
+```
+
+#### Cleanup
+To completely wipe the environment and free up system resources:
+
+Destroy VMs:
+```bash
+vagrant destroy -f
+```
+
+Remove Local Metadata:
+```bash
+rm -rf .vagrant/
+```
+
+## Optional
 #### Check current status of VMs:
 ```bash
 vagrant status 
@@ -70,33 +127,4 @@ helm uninstall vote-app-100 -n vote-app
 
 # Cleanup all resources in namespace
 kubectl delete all --all -n <tên-namespace>
-
 ```
-Page: 
-Vote: http://192.168.56.20:31000
-Result: http://192.168.56.20:31001
-
-Setups Github Runner k8s:
-ARC systems:
-```bash
-helm install arc \
---namespace "arc-systems" \
---create-namespace \
-oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
-```
-ARC runner:
-```bash
-INSTALLATION_NAME="staging-runner-set"
-NAMESPACE="arc-runners"
-GITHUB_CONFIG_URL="https://github.com/tranthaiminhtansoft/iac-vagrant-k8s-cluster-local"
-GITHUB_PAT="xxx"
-helm upgrade --install "${INSTALLATION_NAME}" \
--f values.yml \
---namespace "${NAMESPACE}" \
---create-namespace \
---set githubConfigUrl="${GITHUB_CONFIG_URL}" \
---set githubConfigSecret.github_token="${GITHUB_PAT}" \
-oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
-```
-
-Apply cái runner-rbac.yml trong cluster để ràng buộc serviceaccount

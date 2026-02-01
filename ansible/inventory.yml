@@ -1,0 +1,28 @@
+all:
+  hosts:
+    rke2-server-001:
+      ansible_host: 192.168.56.11
+    rke2-agent-001:
+      ansible_host: 192.168.56.12
+    rke2-agent-002:
+      ansible_host: 192.168.56.13
+    vip-lb:
+      ansible_host: 192.168.56.14
+      cpu: 1
+      memory: 1024
+  children:
+    master:
+      hosts:
+        rke2-server-001:
+    workers:
+      hosts:
+        rke2-agent-001:
+        rke2-agent-002:
+    loadbalancer:
+      hosts:
+        vip-lb:
+  vars:
+    ansible_user: ubuntu
+    ansible_become: yes
+    ansible_ssh_private_key_file: ./ssh_keys/id_rsa
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'

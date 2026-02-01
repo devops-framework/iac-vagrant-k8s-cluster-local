@@ -9,7 +9,7 @@
 
 - name: Copy Keepalived configuration
   template:
-    src: ../vip_conf/keepalived.conf.j2
+    src: "{{ role_path }}/conf/keepalived.conf.j2"
     dest: /etc/keepalived/keepalived.conf
   notify: Restart Keepalived
 

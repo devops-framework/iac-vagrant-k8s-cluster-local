@@ -1,13 +1,32 @@
 ---
-- hosts: all
+- name: Setup RKE2 Master
+  hosts: master
   become: yes
   roles:
-    - role: common
-    - role: users
-  tasks:
-    - name: Include roles listed in host variable selected_roles (if any)
-      include_role:
-        name: "{{ item }}"
-      loop: "{{ selected_roles | default([]) }}"
-      when: selected_roles is defined
-      tags: always
+    - rke2-server
+
+- name: Setup RKE2 Agents
+  hosts: workers
+  become: yes
+  vars:
+    rke2_token: "{{ hostvars[groups['master'][0]]['rke2_token'] }}"
+  roles:
+    - rke2-agent
+
+- name: Setup VIP Load Balancer
+  hosts: loadbalancer
+  become: yes
+  roles:
+    - vip_lb
+
+- name: Deploy Github Runner to RKE2 Cluster
+  hosts: master
+  become: yes
+  roles:
+    - github-rac
+
+- name: Deploy ArgoCD to RKE2 Cluster
+  hosts: master
+  become: yes
+  roles:
+    - argocd
