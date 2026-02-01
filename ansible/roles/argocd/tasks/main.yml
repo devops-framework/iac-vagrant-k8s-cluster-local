@@ -1,0 +1,59 @@
+---
+- name: Create ArgoCD Namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ rke2_kubeconfig }}"
+    name: argocd
+    api_version: v1
+    kind: Namespace
+    state: present
+
+- name: Install ArgoCD Manifests
+  kubernetes.core.k8s:
+    kubeconfig: "{{ rke2_kubeconfig }}"
+    src: https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    namespace: argocd
+    state: present
+
+- name: Patch ArgoCD Server to NodePort
+  kubernetes.core.k8s:
+    kubeconfig: "{{ rke2_kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: argocd-server
+        namespace: argocd
+      spec:
+        type: NodePort
+    state: present
+
+- name: Get ArgoCD NodePort
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_kubeconfig }}"
+    kind: Service
+    name: argocd-server
+    namespace: argocd
+  register: argocd_svc
+
+- name: Get ArgoCD Initial Admin Password
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_kubeconfig }}"
+    kind: Secret
+    name: argocd-initial-admin-secret
+    namespace: argocd
+  register: argocd_secret
+  retries: 10
+  delay: 10
+  until: argocd_secret.resources | length > 0
+
+- name: Save Admin Password to Fact
+  set_fact:
+    argocd_url: "https://{{ hostvars['vip-lb']['ansible_host'] }}:{{ (argocd_svc.resources[0].spec.ports | selectattr('port', 'equalto', 443) | first).nodePort }}"
+    argocd_admin_password: "{{ argocd_secret.resources[0].data.password | b64decode }}"
+    
+
+- name: Display ArgoCD Access Info
+  debug:
+    msg: 
+      - "ArgoCD URL: {{ argocd_url }}"
+      - "Admin Password: {{ argocd_admin_password }}"

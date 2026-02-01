@@ -1,37 +1,65 @@
 ---
+# Helm Installation
+- name: Check if Helm is installed
+  stat:
+    path: /usr/local/bin/helm
+  register: helm_check
+
 - name: Install Helm
-  shell: |
-    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-  args:
-    executable: /bin/bash
+  when: not helm_check.stat.exists
+  block:
+    - name: Download Helm installer
+      get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: /tmp/get_helm.sh
+        mode: '0755'
 
-- name: Run RKE2 installer for server
-  shell: |
-    curl -sfL https://get.rke2.io | sudo sh -
+    - name: Run Helm installer
+      shell: /tmp/get_helm.sh
+      args:
+        executable: /bin/bash
 
-- name: Enable and start RKE2 server service
+# RKE2 Installation and Configuration
+- name: Ensure RKE2 config directory exists
+  file:
+    path: /etc/rancher/rke2
+    state: directory
+    mode: '0755'
+
+- name: Check RKE2 binary
+  stat:
+    path: /usr/local/bin/rke2
+  register: rke2_bin
+
+- name: Download and Run RKE2 Installer
+  shell: curl -sfL https://get.rke2.io | sh -
+  environment:
+    INSTALL_RKE2_VERSION: "{{ rke2_version }}"
+  when: not rke2_bin.stat.exists
+
+- name: Start RKE2 service
   systemd:
-    name: "rke2-server.service"
-    enabled: yes
+    name: rke2-server
     state: started
+    enabled: yes
 
 - name: "Gather system service facts"
-  ansible.builtin.service_facts:
+  service_facts:
 
 - name: "Display RKE2 Server operational status"
-  ansible.builtin.debug:
-    msg: "RKE2 Server is currently {{ ansible_facts.services['rke2-server.service'].state }}"
+  debug:
+    msg: "RKE2 Server ({{ rke2_version }}) is currently {{ ansible_facts.services['rke2-server.service'].state }}"
 
 - name: "Copy kubectl binary to system bin directory"
   # Use remote_src: yes to copy the file directly on the target server
-  ansible.builtin.copy:
+  copy:
     src: /var/lib/rancher/rke2/bin/kubectl
     dest: /usr/local/bin/kubectl
     mode: '0755'
     remote_src: yes
 
 - name: "Create .kube directory in home of user: {{ ansible_user }}"
-  ansible.builtin.file:
+  file:
     path: "/home/{{ ansible_user }}/.kube"
     state: directory
     owner: "{{ ansible_user }}"
@@ -39,7 +67,7 @@
     mode: '0700'
 
 - name: "Copy rke2.yaml to {{ ansible_user }} kubeconfig"
-  ansible.builtin.copy:
+  copy:
     src: /etc/rancher/rke2/rke2.yaml
     dest: "/home/{{ ansible_user }}/.kube/config"
     remote_src: yes
@@ -48,34 +76,16 @@
     mode: '0600' # Security: only the owner can read this config
 
 - name: "Add KUBECONFIG environment variable to {{ ansible_user }} .bashrc"
-  ansible.builtin.lineinfile:
+  lineinfile:
     path: "/home/{{ ansible_user }}/.bashrc"
     line: 'export KUBECONFIG=~/.kube/config'
     state: present
 
-- name: Copy RBAC file
-  copy:
-    src: "../../../../github-runner-setting/runner-rbac.yml"
-    dest: "/tmp/rbac-runner.yaml"
-    mode: '0644'
+- name: Read node-token from Master
+  slurp:
+    src: /var/lib/rancher/rke2/server/node-token
+  register: master_token_encoded
 
-- name: Write values files for GitHub runners
-  copy:
-    content: |
-      githubConfigUrl: "{{ item.github_repo }}"
-      githubConfigSecret:
-        github_token: "{{ github_pat }}"
-      containerMode:
-        type: "dind"
-      template:
-        spec:
-          serviceAccountName: "{{ item.serviceAccountName }}"
-          containers:
-            - name: runner
-              image: "{{ item.custom_image }}"
-              command: ["/home/runner/run.sh"]
-              securityContext:
-                readOnlyRootFilesystem: false
-    dest: "/tmp/{{ item.runner_name }}-values.yaml"
-    mode: '0644'
-  loop: "{{ github_runner_configs }}"
+- name: Set token fact for other plays
+  set_fact:
+    rke2_token: "{{ master_token_encoded.content | b64decode | trim }}"

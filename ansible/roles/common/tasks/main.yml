@@ -6,8 +6,7 @@
 - name: Install essential packages
   apt:
     name:
-      - curl
-      - wget
       - unzip
-      - git
+      - net-tools
+      - traceroute
     state: present
