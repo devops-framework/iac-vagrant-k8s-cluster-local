@@ -8,5 +8,5 @@ github_pat: "ghp_xxx"
 github_runner_configs:
   - runner_name: "stg-ci-runner-set"
     custom_image: "tantran0411/github-runner-ci:v1"
-    github_repo: "https://github.com/tranthaiminhtansoft/iac-vagrant-k8s-cluster-local"
+    github_repo: "https://github.com/devops-framework"
     serviceAccountName: "staging-runner-sa"

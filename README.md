@@ -104,7 +104,7 @@ vagrant destroy -f
 ```
 
 Ref:
-https://viblo.asia/p/cach-tao-kubernetesk8s-cluster-home-lab-bang-ubuntu-server-2404-qPoL7YjN4vk
+["How to build K8s Cluster home lab as ubuntu 2404"](https://viblo.asia/p/cach-tao-kubernetesk8s-cluster-home-lab-bang-ubuntu-server-2404-qPoL7YjN4vk)
 
 Create ssh_keys folder in root
 Copy private and public ssh key to ssh_keys folder
@@ -127,4 +127,38 @@ helm uninstall vote-app-100 -n vote-app
 
 # Cleanup all resources in namespace
 kubectl delete all --all -n <tên-namespace>
+```
+
+## Troubleshooting
+#### 1. Fix vagrant macbook m4
+
+> [!CAUTION]  
+> **Issue:**
+```
+Vagrant encountered an unexpected communications error with the
+Vagrant VMware Utility driver. Please try to run the command
+again. If this error persists, please open a new issue at:
+
+  https://github.com/hashicorp/vagrant-vmware-desktop/issues
+
+Encountered error: Failed to open TCP connection to 127.0.0.1:9922 (Connection refused - connect(2) for "127.0.0.1" port 9922)
+```
+
+> [!TIP]  
+> **Solution:**  
+
+Step 1: Uninstall Vagrant VMware Utility
+```bash
+sudo rm -rf /opt/vagrant-vmware-desktop
+sudo rm /Library/LaunchDaemons/com.hashicorp.vagrant-vmware-utility.plist
+```
+
+Step 2: Install Vagrant VMware Utility  
+Download the latest Utility: Select the macOS (arm64) version [here](https://developer.hashicorp.com/vagrant/install/vmware)
+
+
+Step 3 (optional): Re-install Plugin Vagrant VMware  
+```bash
+vagrant plugin uninstall vagrant-vmware-desktop
+vagrant plugin install vagrant-vmware-desktop
 ```
