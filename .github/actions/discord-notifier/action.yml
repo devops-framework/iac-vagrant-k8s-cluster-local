@@ -1,0 +1,30 @@
+name: 'Discord Notifier'
+description: 'Discord notifications'
+inputs:
+  webhook_url:
+    description: 'Discord Webhook URL'
+    required: true
+  status:
+    description: 'Job status for color coding'
+    required: true
+  title:
+    description: 'Title of the notification'
+    required: true
+  message:
+    description: 'Main content of the notification'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run Notifier Script
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook_url }}
+        STATUS: ${{ inputs.status }}
+        TITLE: ${{ inputs.title }}
+        MESSAGE: ${{ inputs.message }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        SCRIPT_PATH: ${{ github.action_path }}/../../scripts/discord-notifier.sh
+      run: |
+        bash "$SCRIPT_PATH" "$WEBHOOK_URL" "$STATUS" "$TITLE" "$MESSAGE" "$RUN_URL"
