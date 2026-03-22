@@ -1,0 +1,8 @@
+{
+  "embeds": [{
+    "title": "{{TITLE}}",
+    "color": "{{COLOR}}",
+    "description": "{{CUSTOM_MESSAGE}}\n[View logs]({{RUN_URL}})",
+    "timestamp": "{{TIMESTAMP}}"
+  }]
+}
