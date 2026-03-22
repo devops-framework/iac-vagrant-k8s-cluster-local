@@ -22,6 +22,10 @@ inputs:
     description: 'Build context'
     required: false
     default: '.'
+outputs:
+  dockerhub_url:
+    description: 'Direct URL to the image tag on Docker Hub'
+    value: ${{ steps.generate-url.outputs.url }}
 
 runs:
   using: "composite"
@@ -39,3 +43,8 @@ runs:
         file: ${{ inputs.dockerfile_path }}
         push: true
         tags: ${{ inputs.docker_username }}/${{ inputs.image_name }}:${{ inputs.image_tag }}
+
+    - name: Generate Docker Hub URL
+      id: generate-url
+      shell: bash
+      run: echo "url=https://hub.docker.com/repository/docker/${{ inputs.docker_username }}/${{ inputs.image_name }}/tags?name=${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
