@@ -50,10 +50,72 @@
   set_fact:
     argocd_url: "https://{{ hostvars['vip-lb']['ansible_host'] }}:{{ (argocd_svc.resources[0].spec.ports | selectattr('port', 'equalto', 443) | first).nodePort }}"
     argocd_admin_password: "{{ argocd_secret.resources[0].data.password | b64decode }}"
-    
 
 - name: Display ArgoCD Access Info
   debug:
     msg: 
       - "ArgoCD URL: {{ argocd_url }}"
       - "Admin Password: {{ argocd_admin_password }}"
+
+# 1. Tạo AppProjects
+- name: Ensure ArgoCD Projects exist
+  kubernetes.core.k8s:
+    kubeconfig: "{{ rke2_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: argoproj.io/v1alpha1
+      kind: AppProject
+      metadata:
+        name: "{{ item.project_name }}"
+        namespace: argocd
+      spec:
+        description: "{{ item.description }}"
+        sourceRepos: "{{ item.source_repos }}"
+        destinations: "{{ item.destinations }}"
+  loop: "{{ argocd_projects }}"
+
+# 2. Tạo Repository Secrets (Sử dụng HTTPS + PAT)
+- name: Ensure ArgoCD Repositories are registered (HTTPS)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ rke2_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ item.name }}"
+        namespace: argocd
+        labels:
+          argocd.argoproj.io/secret-type: repository
+      stringData:
+        url: "{{ item.github_repo }}"
+        username: "{{ github_username }}"
+        password: "{{ github_pat }}"
+        project: "{{ item.project }}"
+  loop: "{{ argocd_repos }}"
+
+# 3. Tạo Applications
+- name: Ensure ArgoCD Applications are deployed
+  kubernetes.core.k8s:
+    kubeconfig: "{{ rke2_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: argoproj.io/v1alpha1
+      kind: Application
+      metadata:
+        name: "{{ item.app_name }}"
+        namespace: argocd
+      spec:
+        project: "{{ item.project_name }}"
+        source:
+          repoURL: "{{ item.repo_url }}"
+          targetRevision: "{{ item.revision_branches if item.revision_branches != '' else item.revision_tags }}"
+          path: "{{ item.path }}" # Bạn có thể tùy chỉnh path nếu cần
+          directory:
+            recurse: "{{ item.directory_recurse }}"
+        destination:
+          server: "{{ item.destination_cluster }}"
+          namespace: "{{ item.destination_namespace }}"
+        syncPolicy:
+          automated: "{{ {} if item.sync_policy == 'Manual' else {'prune': true, 'selfHeal': true} }}"
+  loop: "{{ argocd_apps }}"
