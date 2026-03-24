@@ -162,3 +162,17 @@ Step 3 (optional): Re-install Plugin Vagrant VMware
 vagrant plugin uninstall vagrant-vmware-desktop
 vagrant plugin install vagrant-vmware-desktop
 ```
+
+#### 2. Faild to setup network for sandbox
+> [!CAUTION]  
+> **Issue:**
+```
+Failed to create pod sandbox: rpc error: code = Unknown desc = failed to setup network for sandbox "6483f1f9c63064a0d74526fe65fb15b3784e4561c34d269607a1821156c2ef2b": plugin type="calico" failed (add): error getting ClusterInformation: connection is unauthorized: Unauthorized
+```
+
+> [!TIP]  
+> **Solution:**  
+Delete Pod Canal (Master node) to force getting new token
+```bash
+kubectl delete pod -n kube-system -l k8s-app=canal
+```
