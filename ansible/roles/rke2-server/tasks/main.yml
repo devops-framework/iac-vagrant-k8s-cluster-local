@@ -81,6 +81,12 @@
     line: 'export KUBECONFIG=~/.kube/config'
     state: present
 
+- name: "Add kubectl alias to {{ ansible_user }} .bashrc"
+  lineinfile:
+    path: "/home/{{ ansible_user }}/.bashrc"
+    line: 'alias k=kubectl'
+    state: present
+
 - name: Read node-token from Master
   slurp:
     src: /var/lib/rancher/rke2/server/node-token
