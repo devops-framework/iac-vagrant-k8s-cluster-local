@@ -1,18 +1,3 @@
-# Kubernetes Cluster Configuration
-rke2_version: "v1.28.10+rke2r1"
-rke2_kubeconfig: "/home/{{ ansible_user }}/.kube/config"
-
-# Github Creds
-github_username: "xxx"
-github_pat: "xxx"
-
-# Github Runner Configurationv
-github_runner_configs:
-  - runner_name: "stg-ci-runner-set"
-    custom_image: "tantran0411/github-runner-ci:v1"
-    github_repo: "https://github.com/devops-framework"
-    serviceAccountName: "staging-runner-sa"
-
 # ArgoCD Configuration
 argocd_projects:
   - project_name: "staging"
