@@ -25,6 +25,11 @@
         namespace: argocd
       spec:
         type: NodePort
+        ports:
+          - name: http
+            port: 80
+            targetPort: 8080
+            nodePort: 30008
     state: present
 
 - name: Get ArgoCD NodePort
@@ -111,11 +116,9 @@
           repoURL: "{{ item.repo_url }}"
           targetRevision: "{{ item.revision_branches if item.revision_branches != '' else item.revision_tags }}"
           path: "{{ item.path }}" # Bạn có thể tùy chỉnh path nếu cần
-          directory:
-            recurse: "{{ item.directory_recurse }}"
+          directory: "{{ {'recurse': item.directory_recurse} if item.directory_recurse is defined and item.directory_recurse else omit }}"
         destination:
           server: "{{ item.destination_cluster }}"
           namespace: "{{ item.destination_namespace }}"
-        syncPolicy:
-          automated: "{{ {} if item.sync_policy == 'Manual' else {'prune': true, 'selfHeal': true} }}"
+        syncPolicy: "{{ {'automated': {'prune': true, 'selfHeal': true}} if item.sync_policy != 'Manual' else omit }}"
   loop: "{{ argocd_apps }}"

@@ -48,7 +48,7 @@ argocd_apps:
     path: "devops/cd/k8s/staging"
     destination_cluster: "https://kubernetes.default.svc"
     destination_namespace: "backend-stg"
-    directory_recurse: true
+    # directory_recurse: true
   - app_name: "e-commerce-jsf-storefront"
     project_name: "staging"
     sync_policy: "Manual"
@@ -58,7 +58,7 @@ argocd_apps:
     path: "devops/cd/k8s/staging"
     destination_cluster: "https://kubernetes.default.svc"
     destination_namespace: "frontend-stg"
-    directory_recurse: true
+    # directory_recurse: true
   - app_name: "e-commerce-product-service"
     project_name: "staging"
     sync_policy: "Manual"
@@ -68,4 +68,4 @@ argocd_apps:
     path: "devops/cd/k8s/staging"
     destination_cluster: "https://kubernetes.default.svc"
     destination_namespace: "backend-stg"
-    directory_recurse: true
+    # directory_recurse: true
