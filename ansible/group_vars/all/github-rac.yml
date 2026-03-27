@@ -1,0 +1,6 @@
+# Github Runner Configurationv
+github_runner_configs:
+  - runner_name: "stg-ci-runner-set"
+    custom_image: "tantran0411/github-runner-ci:v1"
+    github_repo: "https://github.com/devops-framework"
+    serviceAccountName: "staging-runner-sa"
