@@ -4,4 +4,4 @@
 # SSH keys
 ssh_keys
 
-ansible/group_vars/all/creds.yml
+ansible/group_vars/all/github-creds.yml
