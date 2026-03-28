@@ -1,5 +1,6 @@
 # Vagrant temp dir
 .vagrant
+.DS_Store
 
 # SSH keys
 ssh_keys
