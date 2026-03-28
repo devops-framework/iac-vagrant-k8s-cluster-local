@@ -24,12 +24,23 @@
         name: argocd-server
         namespace: argocd
       spec:
+        # Use NodePort with fixed nodePort values so Kubernetes does not pick
+        # a random port from the NodePort range. We expose both HTTP and HTTPS
+        # to match how the playbook later selects the 443 nodePort for the URL.
         type: NodePort
         ports:
           - name: http
             port: 80
             targetPort: 8080
             nodePort: 30008
+          - name: https
+            port: 443
+            # ArgoCD server listens on 8080 for HTTP; keep targetPort 8080 so
+            # TLS termination in the upstream manifest still works. If your
+            # upstream manifest uses a different targetPort for TLS, adjust
+            # this value accordingly.
+            targetPort: 8080
+            nodePort: 30043
     state: present
 
 - name: Get ArgoCD NodePort
