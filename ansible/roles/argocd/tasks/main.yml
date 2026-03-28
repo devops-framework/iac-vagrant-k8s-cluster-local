@@ -14,53 +14,81 @@
     namespace: argocd
     state: present
 
-- name: Patch ArgoCD Server to NodePort
+- name: Patch ArgoCD ConfigMap to disable internal TLS (Fix Redirect Loop)
   kubernetes.core.k8s:
     kubeconfig: "{{ rke2_kubeconfig }}"
+    state: present
     definition:
       apiVersion: v1
-      kind: Service
+      kind: ConfigMap
       metadata:
-        name: argocd-server
+        name: argocd-cmd-params-cm
         namespace: argocd
-      spec:
-        # Use NodePort with fixed nodePort values so Kubernetes does not pick
-        # a random port from the NodePort range. We expose both HTTP and HTTPS
-        # to match how the playbook later selects the 443 nodePort for the URL.
-        type: NodePort
-        ports:
-          - name: http
-            port: 80
-            targetPort: 8080
-            nodePort: 30008
-          - name: https
-            port: 443
-            # ArgoCD server listens on 8080 for HTTP; keep targetPort 8080 so
-            # TLS termination in the upstream manifest still works. If your
-            # upstream manifest uses a different targetPort for TLS, adjust
-            # this value accordingly.
-            targetPort: 8080
-            nodePort: 30043
+      data:
+        server.insecure: "true"
+
+- name: Delete ArgoCD server pods to apply ConfigMap forcefully
+  kubernetes.core.k8s:
+    kubeconfig: "{{ rke2_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: argocd
+    label_selectors:
+      - app.kubernetes.io/name=argocd-server
+    state: absent
+
+# --- SET MẬT KHẨU ADMIN MỚI ---
+
+- name: Set Custom ArgoCD Admin Password
+  kubernetes.core.k8s:
+    kubeconfig: "{{ rke2_kubeconfig }}"
     state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: argocd-secret
+        namespace: argocd
+      # Sử dụng stringData để Kubernetes tự động mã hóa base64
+      # Filter password_hash('bcrypt') sẽ băm mật khẩu ra định dạng ArgoCD yêu cầu
+      stringData:
+        admin.password: "{{ 'admin' | password_hash('bcrypt') }}"
+        admin.passwordMtime: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime }}"
 
-- name: Get ArgoCD NodePort
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ rke2_kubeconfig }}"
-    kind: Service
-    name: argocd-server
-    namespace: argocd
-  register: argocd_svc
+# --- CẤU HÌNH INGRESS ---
 
-- name: Get ArgoCD Initial Admin Password
-  kubernetes.core.k8s_info:
+- name: Create ArgoCD Ingress
+  kubernetes.core.k8s:
     kubeconfig: "{{ rke2_kubeconfig }}"
-    kind: Secret
-    name: argocd-initial-admin-secret
-    namespace: argocd
-  register: argocd_secret
-  retries: 10
-  delay: 10
-  until: argocd_secret.resources | length > 0
+    state: present
+    definition:
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: argocd-server-ingress
+        namespace: argocd
+        annotations:
+          nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      spec:
+        ingressClassName: nginx
+        rules:
+          - host: "{{ argocd_domain | default('argocd.homelab') }}"
+            http:
+              paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: argocd-server
+                      port:
+                        number: 80
+
+- name: Display ArgoCD Access Info
+  debug:
+    msg: 
+      - "ArgoCD URL: https://{{ argocd_domain | default('argocd.homelab') }}"
+      - "Admin Password has been set to 'admin' password."
 
 - name: Save Admin Password to Fact
   set_fact:
