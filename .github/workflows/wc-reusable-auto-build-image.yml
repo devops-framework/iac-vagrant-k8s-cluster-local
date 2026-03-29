@@ -76,7 +76,7 @@ jobs:
           docker_password: ${{ secrets.DOCKER_PASSWORD }}
           image_name: ${{ inputs.app_name }}
           image_tag: ${{ steps.get-image-tag.outputs.image_tag }}
-          dockerfile_path: "./devops/ci/docker/staging/Dockerfile"
+          dockerfile_path: ${{ inputs.dockerfile_path }}
 
       - name: Update Image Tag in Deployment
         id: updated_image_tag

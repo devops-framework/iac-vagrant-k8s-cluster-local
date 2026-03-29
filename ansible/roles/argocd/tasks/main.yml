@@ -37,26 +37,6 @@
       - app.kubernetes.io/name=argocd-server
     state: absent
 
-# --- SET MẬT KHẨU ADMIN MỚI ---
-
-- name: Set Custom ArgoCD Admin Password
-  kubernetes.core.k8s:
-    kubeconfig: "{{ rke2_kubeconfig }}"
-    state: present
-    definition:
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: argocd-secret
-        namespace: argocd
-      # Sử dụng stringData để Kubernetes tự động mã hóa base64
-      # Filter password_hash('bcrypt') sẽ băm mật khẩu ra định dạng ArgoCD yêu cầu
-      stringData:
-        admin.password: "{{ 'admin' | password_hash('bcrypt') }}"
-        admin.passwordMtime: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime }}"
-
-# --- CẤU HÌNH INGRESS ---
-
 - name: Create ArgoCD Ingress
   kubernetes.core.k8s:
     kubeconfig: "{{ rke2_kubeconfig }}"
@@ -84,15 +64,20 @@
                       port:
                         number: 80
 
-- name: Display ArgoCD Access Info
-  debug:
-    msg: 
-      - "ArgoCD URL: https://{{ argocd_domain | default('argocd.homelab') }}"
-      - "Admin Password has been set to 'admin' password."
+- name: Get ArgoCD Initial Admin Password
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_kubeconfig }}"
+    kind: Secret
+    name: argocd-initial-admin-secret
+    namespace: argocd
+  register: argocd_secret
+  retries: 10
+  delay: 10
+  until: argocd_secret.resources | length > 0
 
 - name: Save Admin Password to Fact
   set_fact:
-    argocd_url: "https://{{ hostvars['vip-lb']['ansible_host'] }}:{{ (argocd_svc.resources[0].spec.ports | selectattr('port', 'equalto', 443) | first).nodePort }}"
+    argocd_url: "https://{{ argocd_domain | default('argocd.homelab') }}"
     argocd_admin_password: "{{ argocd_secret.resources[0].data.password | b64decode }}"
 
 - name: Display ArgoCD Access Info
