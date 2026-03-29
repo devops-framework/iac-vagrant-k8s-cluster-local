@@ -20,12 +20,13 @@
     block: |
       # --- Cấu hình cho App 1 ---
       frontend app1_frontend
-          bind *:30000-32767
+          bind *:80
+          bind *:443
           mode tcp
           default_backend app1_backend
 
       backend app1_backend
           mode tcp
-          server worker1 192.168.56.12
-          server worker2 192.168.56.13
+          server worker1 192.168.5.133
+          server worker2 192.168.5.134
   notify: Restart HAProxy
