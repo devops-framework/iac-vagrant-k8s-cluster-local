@@ -10,6 +10,10 @@ on:
         required: true
         description: Dockerfile path
         type: string
+      deps_cache_key:
+        required: true
+        description: Cache key for restoring Maven dependencies cache from deps job
+        type: string
       gha_environment:
         required: true
         description: Environment to get Github secrets and variables
@@ -25,7 +29,7 @@ on:
 
 jobs:
   build:
-    name: Build & Push
+    name: 🚀 Build Docker & Push
     runs-on: stg-ci-runner-set
     environment: ${{ inputs.gha_environment }}
     steps:
@@ -46,6 +50,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Restore Maven repository cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ./.m2/repository
+          key: ${{ inputs.deps_cache_key }}
+
+      - name: Ensure m2 local exists
+        run: |
+          ls ./.m2/repository
+
       - name: Set short SHA
         id: get-short-sha
         run: echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
@@ -62,7 +76,7 @@ jobs:
           docker_password: ${{ secrets.DOCKER_PASSWORD }}
           image_name: ${{ inputs.app_name }}
           image_tag: ${{ steps.get-image-tag.outputs.image_tag }}
-          dockerfile_path: "./devops/ci/docker/staging/Dockerfile"
+          dockerfile_path: ${{ inputs.dockerfile_path }}
 
       - name: Update Image Tag in Deployment
         id: updated_image_tag

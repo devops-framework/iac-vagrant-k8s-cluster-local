@@ -69,6 +69,10 @@ To completely wipe the environment and free up system resources:
 Destroy VMs:
 ```bash
 vagrant destroy -f
+
+vagrant box prune
+
+vagrant global-status --prune
 ```
 
 Remove Local Metadata:

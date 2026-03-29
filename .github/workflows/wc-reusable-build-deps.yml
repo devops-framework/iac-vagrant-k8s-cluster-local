@@ -1,0 +1,86 @@
+name: Build Maven dependencies
+
+on:
+  workflow_call:
+    inputs:
+      image_runtime:
+        required: true
+        description: Runtime to use for the build (e.g., 'maven:3.9.4-eclipse-temurin-17-alpine')
+        type: string
+      module_path:
+        required: true
+        description: Path to the module for which to build dependencies (relative to repo root, e.g., 'e-commerce-systems/common-deps')
+        type: string
+    outputs:
+      cache-key:
+        description: 'Cache key to use for actions/cache in caller'
+        value: ${{ jobs.check-deps.outputs.cache-key }}
+      cache-hit:
+        description: 'Whether the cache was hit during deps job'
+        value: ${{ jobs.check-deps.outputs.cache-hit }}
+
+jobs:
+  check-deps:
+    name: 🔎 Check existence cache
+    runs-on: stg-ci-runner-set
+    outputs:
+      cache-key: ${{ steps.compute_key.outputs.hash }}
+      cache-hit: ${{ steps.maven-cache.outputs.cache-hit }}
+    steps:
+      - name: Clone e-commerce-systems for ${{ inputs.module_path }}
+        uses: actions/checkout@v4
+        with:
+          repository: devops-framework/e-commerce-systems
+          path: e-commerce-systems
+          sparse-checkout: |
+            ${{ inputs.module_path }}
+            
+      - name: Compute cache key from pom.xml + Java sources
+        id: compute_key
+        env:
+          DEPS_MODULE: ./e-commerce-systems/${{ inputs.module_path }}
+        run: |
+          HASH=${{ hashFiles(format('{0}/pom.xml', env.DEPS_MODULE)) }}
+          echo "hash=maven-repo-$HASH" >> "$GITHUB_OUTPUT"
+          echo "Computed cache hash successfully: $HASH"
+
+      - name: Lookup Maven repository cache (no download)
+        id: maven-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ./.m2/repository
+          key: ${{ steps.compute_key.outputs.hash }}
+          lookup-only: true
+
+  build-deps:
+    name: 📦 Build & Cache
+    needs: check-deps
+    if: needs.check-deps.outputs.cache-hit != 'true'
+    runs-on: stg-ci-runner-set
+    container:
+      image: ${{ inputs.image_runtime }}
+    steps:
+      - name: Clone e-commerce-systems for ${{ inputs.module_path }}
+        uses: actions/checkout@v4
+        with:
+          repository: devops-framework/e-commerce-systems
+          path: e-commerce-systems
+          sparse-checkout: |
+            ${{ inputs.module_path }}
+
+      - name: Resolve dependencies
+        run: |
+          echo "Cache miss — resolving dependencies into m2 local"
+          mvn -B dependency:go-offline -f ./e-commerce-systems/${{ inputs.module_path }}/pom.xml -Dmaven.repo.local=./.m2/repository
+          mvn -B install -f ./e-commerce-systems/${{ inputs.module_path }}/pom.xml -Dmaven.repo.local=./.m2/repository
+
+      - name: Save Maven repository to cache
+        uses: actions/cache/save@v4
+        with:
+          path: ./.m2/repository
+          key: ${{ needs.check-deps.outputs.cache-key }}
+
+      - name: Ensure m2 local exists
+        run: |
+          pwd
+          ls ./.m2/repository
