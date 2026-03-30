@@ -1,0 +1,38 @@
+name: Build & cache Maven dependencies
+description: "Resolve and cache Maven dependencies for a module. Intended to be run inside a job that sets a container image when needed."
+inputs:
+  module_path:
+    required: true
+    description: Path to the module for which to build dependencies (relative to repo root, e.g., 'e-commerce-systems/common-deps')
+  cache_key:
+    required: true
+    description: The cache key computed by the check-deps action
+runs:
+  using: composite
+  steps:
+    - name: Clone e-commerce-systems for ${{ inputs.module_path }}
+      uses: actions/checkout@v4
+      with:
+        repository: devops-framework/e-commerce-systems
+        path: e-commerce-systems
+        sparse-checkout: |
+          ${{ inputs.module_path }}
+
+    - name: Resolve dependencies
+      shell: bash
+      run: |
+        echo "Cache miss — resolving dependencies into m2 local"
+        mvn -B dependency:go-offline -f ./e-commerce-systems/${{ inputs.module_path }}/pom.xml -Dmaven.repo.local=./.m2/repository
+        mvn -B install -f ./e-commerce-systems/${{ inputs.module_path }}/pom.xml -Dmaven.repo.local=./.m2/repository
+
+    - name: Save Maven repository to cache
+      uses: actions/cache/save@v4
+      with:
+        path: ./.m2/repository
+        key: ${{ inputs.cache_key }}
+
+    - name: Ensure m2 local exists
+      shell: bash
+      run: |
+        pwd
+        ls ./.m2/repository
