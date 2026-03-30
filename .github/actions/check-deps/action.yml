@@ -1,0 +1,41 @@
+name: Check Maven dependencies cache
+description: "Clone the deps module and check whether a Maven repo cache exists (lookup-only). Exposes cache-key and cache-hit outputs."
+inputs:
+  module_path:
+    required: true
+    description: Path to the module for which to build dependencies (relative to repo root, e.g., 'e-commerce-systems/common-deps')
+outputs:
+  cache-key:
+    description: 'Cache key to use for actions/cache in caller'
+    value: ${{ steps.compute_key.outputs.hash }}
+  cache-hit:
+    description: 'Whether the cache was hit during deps job'
+    value: ${{ steps.maven-cache.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - name: Clone e-commerce-systems for ${{ inputs.module_path }}
+      uses: actions/checkout@v4
+      with:
+        repository: devops-framework/e-commerce-systems
+        path: e-commerce-systems
+        sparse-checkout: |
+          ${{ inputs.module_path }}
+
+    - name: Compute cache key from pom.xml + Java sources
+      id: compute_key
+      env:
+        DEPS_MODULE: ./e-commerce-systems/${{ inputs.module_path }}
+      shell: bash
+      run: |
+        HASH=${{ hashFiles(format('{0}/pom.xml', env.DEPS_MODULE)) }}
+        echo "hash=maven-repo-$HASH" >> "$GITHUB_OUTPUT"
+        echo "Computed cache hash successfully: $HASH"
+
+    - name: Lookup Maven repository cache (no download)
+      id: maven-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ./.m2/repository
+        key: ${{ steps.compute_key.outputs.hash }}
+        lookup-only: true

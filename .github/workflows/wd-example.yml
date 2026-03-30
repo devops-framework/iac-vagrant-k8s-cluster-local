@@ -1,0 +1,112 @@
+name: Example Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_a:
+        type: boolean
+        description: 'Whether to build A (which depends on common-deps)'
+        required: false
+        default: false
+      deploy_b:
+        type: boolean
+        description: 'Whether to build B (which has no deps)'
+        required: false
+        default: false
+      deploy_cluster1:
+        type: boolean
+        description: 'Whether to deploy cluster 1'
+        required: false
+        default: false
+      deploy_cluster2:
+        type: boolean
+        description: 'Whether to deploy cluster 2'
+        required: false
+        default: false
+
+jobs:
+  check-deps:
+    runs-on: stg-ci-runner-set
+    strategy:
+      matrix:
+        include:
+          - name: common_deps
+            module: 'common-deps'
+          - name: common_deps_3rd
+            module: 'common-deps-3rd'
+    outputs:
+      common_deps_cache_key: ${{ steps.export-cache.outputs.cache_key_common_deps }}
+      common_deps_cache_hit: ${{ steps.maven-cache.outputs.cache_hit_common_deps }}
+      common_deps_3rd_cache_key: ${{ steps.export-cache.outputs.cache_key_common_deps_3rd }}
+      common_deps_3rd_cache_hit: ${{ steps.maven-cache.outputs.cache_hit_common_deps_3rd }}
+    steps:
+      - uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/check-deps@dev
+        id: maven-cache
+        with:
+          module_path: ${{ matrix.module }}
+
+      - name: Export cache
+        id: export-cache
+        shell: bash
+        run: |
+          echo "cache_key_${{ matrix.name }}=${{ steps.maven-cache.outputs.cache-key }}" >> $GITHUB_OUTPUT
+          echo "cache_hit_${{ matrix.name }}=${{ steps.maven-cache.outputs.cache-hit }}" >> $GITHUB_OUTPUT
+
+  build-module:
+    needs: check-deps
+    if: needs.check-deps.outputs.common_deps_cache_hit != 'true'
+    runs-on: stg-ci-runner-set
+    container:
+      image: 'maven:3.8.4-openjdk-11-slim'
+    steps:
+      - uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/build-deps@dev
+        with:
+          module_path: 'common-deps'
+          cache_key: ${{ needs.check-deps.outputs.common_deps_cache_key }}
+
+  build-a:
+    if: ${{ inputs.deploy_a }}
+    needs: 
+      - check-deps
+      - build-module
+    runs-on: stg-ci-runner-set
+    steps:
+      - run: |
+          echo "Building A with cache key ${{ needs.check-deps.outputs.common_deps_cache_key }}"
+          echo "image=abc:123" >> $GITHUB_OUTPUT
+
+  build-b:
+    if: ${{ inputs.deploy_b }}
+    runs-on: stg-ci-runner-set
+    steps:
+      - run: |
+          echo "Building B..."
+
+  deploy-a-cluster1:
+    if: ${{ inputs.deploy_a && inputs.deploy_cluster1 }}
+    needs: build-a
+    runs-on: stg-ci-runner-set
+    steps:
+      - run: echo "Deploying cluster 1 build a with image ${{ needs.build-a.outputs.image }}..."
+
+  deploy-a-cluster2:
+    if: ${{ inputs.deploy_a && inputs.deploy_cluster2 }}
+    needs: build-a
+    runs-on: stg-ci-runner-set
+    steps:
+      - run: echo "Deploying cluster 2 build a with image ${{ needs.build-a.outputs.image }}..."
+
+  deploy-b-cluster1:
+    if: ${{ inputs.deploy_b && inputs.deploy_cluster1 }}
+    needs: build-b
+    runs-on: stg-ci-runner-set
+    steps:
+      - run: echo "Deploying build b with image ${{ needs.build-b.outputs.image }}"
+
+  deploy-b-cluster2:
+    if: ${{ inputs.deploy_b && inputs.deploy_cluster2 }}
+    needs: build-b
+    runs-on: stg-ci-runner-set
+    steps:
+      - run: echo "Deploying cluster 2 build b with image ${{ needs.build-b.outputs.image }}"
+

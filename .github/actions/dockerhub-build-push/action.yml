@@ -18,6 +18,10 @@ inputs:
     description: 'Path to Dockerfile'
     required: false
     default: './Dockerfile'
+  docker_push:
+    description: 'Whether to push the image to Docker Hub'
+    required: false
+    default: 'true'
   context:
     description: 'Build context'
     required: false
@@ -41,7 +45,7 @@ runs:
       with:
         context: ${{ inputs.context }}
         file: ${{ inputs.dockerfile_path }}
-        push: true
+        push: ${{ inputs.docker_push == 'true' && true || false }}
         tags: ${{ inputs.docker_username }}/${{ inputs.image_name }}:${{ inputs.image_tag }}
 
     - name: Generate Docker Hub URL
