@@ -1,28 +1,29 @@
 name: Example Workflow
+run-name: Example Workflow run
 
 on:
   workflow_dispatch:
     inputs:
       deploy_a:
         type: boolean
-        description: 'Whether to build A (which depends on common-deps)'
+        description: 'Deploy A'
         required: false
-        default: false
+        default: true
       deploy_b:
         type: boolean
-        description: 'Whether to build B (which has no deps)'
+        description: 'Deploy B'
         required: false
-        default: false
+        default: true
       deploy_cluster1:
         type: boolean
-        description: 'Whether to deploy cluster 1'
+        description: 'Deploy cluster 1'
         required: false
-        default: false
+        default: true
       deploy_cluster2:
         type: boolean
-        description: 'Whether to deploy cluster 2'
+        description: 'Deploy cluster 2'
         required: false
-        default: false
+        default: true
 
 jobs:
   check-deps:
@@ -83,28 +84,28 @@ jobs:
           echo "Building B..."
 
   deploy-a-cluster1:
-    if: ${{ inputs.deploy_a && inputs.deploy_cluster1 }}
+    if: inputs.deploy_a && inputs.deploy_cluster1
     needs: build-a
     runs-on: stg-ci-runner-set
     steps:
       - run: echo "Deploying cluster 1 build a with image ${{ needs.build-a.outputs.image }}..."
 
   deploy-a-cluster2:
-    if: ${{ inputs.deploy_a && inputs.deploy_cluster2 }}
+    if: inputs.deploy_a && inputs.deploy_cluster2
     needs: build-a
     runs-on: stg-ci-runner-set
     steps:
       - run: echo "Deploying cluster 2 build a with image ${{ needs.build-a.outputs.image }}..."
 
   deploy-b-cluster1:
-    if: ${{ inputs.deploy_b && inputs.deploy_cluster1 }}
+    if: inputs.deploy_b && inputs.deploy_cluster1
     needs: build-b
     runs-on: stg-ci-runner-set
     steps:
       - run: echo "Deploying build b with image ${{ needs.build-b.outputs.image }}"
 
   deploy-b-cluster2:
-    if: ${{ inputs.deploy_b && inputs.deploy_cluster2 }}
+    if: inputs.deploy_b && inputs.deploy_cluster2
     needs: build-b
     runs-on: stg-ci-runner-set
     steps:
