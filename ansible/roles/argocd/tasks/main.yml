@@ -37,6 +37,18 @@
       - app.kubernetes.io/name=argocd-server
     state: absent
 
+- name: Wait for ingress-controller admission endpoints
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    namespace: kube-system
+    name: rke2-ingress-nginx-controller-admission
+  register: ingress_admission_ep
+  retries: 20
+  delay: 5
+  until: ingress_admission_ep.resources | length > 0 and (ingress_admission_ep.resources[0].subsets is defined and ingress_admission_ep.resources[0].subsets | length > 0)
+
 - name: Create ArgoCD Ingress
   kubernetes.core.k8s:
     kubeconfig: "{{ rke2_kubeconfig }}"
