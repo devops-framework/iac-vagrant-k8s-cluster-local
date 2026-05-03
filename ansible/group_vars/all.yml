@@ -41,7 +41,7 @@ argocd_apps:
     repo_url: "https://github.com/devops-framework/e-commerce-order-service.git"
     revision_branches: "master" # Nếu chọn branches thì để trống revision_tags
     revision_tags: "" # Nếu chọn tags thì để trống revision_branches
-    path: "devops/cd/k8s/staging"
+    path: "devops/cd/k8s/overlays/staging"
     destination_cluster: "https://kubernetes.default.svc"
     destination_namespace: "backend-stg"
     # directory_recurse: true
@@ -51,7 +51,7 @@ argocd_apps:
     repo_url: "https://github.com/devops-framework/e-commerce-jsf-storefront.git"
     revision_branches: "master" # Nếu chọn branches thì để trống revision_tags
     revision_tags: "" # Nếu chọn tags thì để trống revision_branches
-    path: "devops/cd/k8s/staging"
+    path: "devops/cd/k8s/overlays/staging"
     destination_cluster: "https://kubernetes.default.svc"
     destination_namespace: "frontend-stg"
     # directory_recurse: true
@@ -61,7 +61,7 @@ argocd_apps:
     repo_url: "https://github.com/devops-framework/e-commerce-product-service.git"
     revision_branches: "master" # Nếu chọn branches thì để trống revision_tags
     revision_tags: "" # Nếu chọn tags thì để trống revision_branches
-    path: "devops/cd/k8s/staging"
+    path: "devops/cd/k8s/overlays/staging"
     destination_cluster: "https://kubernetes.default.svc"
     destination_namespace: "backend-stg"
     # directory_recurse: true
