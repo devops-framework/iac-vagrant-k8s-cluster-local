@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: storefront-ingress
+  namespace: frontend-stg
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: "ec.homelab.local"
+      http:
+        paths:
+          - path: /storefront
+            pathType: Prefix
+            backend:
+              service:
+                name: storefront-service
+                port:
+                  number: 80
