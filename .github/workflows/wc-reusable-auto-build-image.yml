@@ -11,8 +11,8 @@ on:
         description: Dockerfile path
         type: string
       deps_cache_key:
-        required: true
-        description: Cache key for restoring Maven dependencies cache from deps job
+        required: false
+        description: Cache key for restoring Maven dependencies cache from deps job (optional)
         type: string
       gha_environment:
         required: true
@@ -50,13 +50,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Checkout iac repo
+        uses: actions/checkout@v4
+        with:
+          repository: devops-framework/iac-vagrant-k8s-cluster-local
+          token: ${{ secrets.IAC_REPO_WRITE_TOKEN }}
+          ref: develop/homelab/centralized-k8s-manifest
+          path: iac-repo
+
       - name: Restore Maven repository cache
+        if: ${{ inputs.deps_cache_key != '' }}
         uses: actions/cache/restore@v4
         with:
           path: ./.m2/repository
           key: ${{ inputs.deps_cache_key }}
 
       - name: Ensure m2 local exists
+        if: ${{ inputs.deps_cache_key != '' }}
         run: |
           ls ./.m2/repository
 
@@ -83,19 +93,52 @@ jobs:
         shell: bash
         run: |
           IMAGE_TAG="${{ steps.get-image-tag.outputs.image_tag }}"
-          MANIFEST_PATH="devops/cd/k8s/staging/kustomization.yaml"
-          
-          sed -i "s|newTag: .*|newTag: $IMAGE_TAG|g" $MANIFEST_PATH
+          # Derive per-app overlay path so CI updates the correct overlay kustomization
+          APP_NAME="${{ inputs.app_name }}"
+          MANIFEST_PATH="iac-repo/devops/cd/k8s/overlays/staging/${APP_NAME}/kustomization.yml"
+
+          # Sanity checks: manifest must exist and contain an 'images:' block
+          if [ ! -f "$MANIFEST_PATH" ]; then
+            echo "ERROR: manifest path $MANIFEST_PATH does not exist" >&2
+            exit 1
+          fi
+
+          if ! grep -q "^images:" "$MANIFEST_PATH"; then
+            echo "ERROR: manifest $MANIFEST_PATH does not contain 'images:' block. Aborting." >&2
+            exit 1
+          fi
+
+          # Fallback: use sed to replace newTag value in kustomization (simple, portable for Linux runners)
+          sed -i "s|newTag: \".*\"|newTag: \"$IMAGE_TAG\"|g" "$MANIFEST_PATH"
+
           echo "manifest_path=${MANIFEST_PATH}" >> $GITHUB_OUTPUT
 
-      - name: Commit and Push changes
-        id: auto-commit-step
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "chore(staging): Auto pin image to ${{ steps.get-short-sha.outputs.short_sha }}"
-          file_pattern: '${{ steps.updated_image_tag.outputs.manifest_path }}'
-          branch: ${{ github.ref_name }}
-          repository: .
+      - name: Commit and push iac changes
+        id: iac-commit
+        shell: bash
+        env:
+          IAC_TOKEN: ${{ secrets.IAC_REPO_WRITE_TOKEN }}
+        run: |
+          set -euo pipefail
+          pushd iac-repo
+          git config user.name "Tan Tran Thai Minh"
+          git config user.email "tranthaiminhtansoft@gmail.com"
+          TARGET_PATH="${{ steps.updated_image_tag.outputs.manifest_path }}"
+          # Convert to relative path inside iac-repo if prefixed
+          REL_PATH="${TARGET_PATH#iac-repo/}"
+          echo "Adding path: $REL_PATH"
+          git add "$REL_PATH"
+          if git diff --staged --quiet; then
+            echo "no changes to commit"
+            echo "changes_detected=false" >> $GITHUB_OUTPUT
+          else
+            git commit -m "chore(staging): Auto pin image to ${{ steps.get-short-sha.outputs.short_sha }}"
+            COMMIT_HASH=$(git rev-parse HEAD)
+            git push https://x-access-token:${IAC_TOKEN}@github.com/devops-framework/iac-vagrant-k8s-cluster-local.git HEAD:develop/homelab/centralized-k8s-manifest
+            echo "changes_detected=true" >> $GITHUB_OUTPUT
+            echo "commit_hash=${COMMIT_HASH}" >> $GITHUB_OUTPUT
+          fi
+          popd
 
       - name: Discord result notification
         if: always()
@@ -113,4 +156,4 @@ jobs:
             **Actor:** ${{ github.actor }}
             **Branch:** `${{ github.ref_name }}`
             **Image Tag:** [${{ steps.get-image-tag.outputs.image_tag || 'None' }}](${{ steps.docker-build-push.outputs.dockerhub_url || 'None' }})
-            **Manifest Change:** ${{ steps.auto-commit-step.outputs.changes_detected == 'true' && format('[{1}](https://github.com/{0}/commit/{1})', github.repository, steps.auto-commit-step.outputs.commit_hash) || 'No changes' }}
+            **Manifest Change:** ${{ steps.iac-commit.outputs.changes_detected == 'true' && format('[{1}](https://github.com/{0}/commit/{1})', github.repository, steps.iac-commit.outputs.commit_hash) || 'No changes' }}

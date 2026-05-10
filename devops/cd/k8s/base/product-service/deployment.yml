@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-service
+  namespace: backend-stg
+  labels:
+    app: product-service
+    target_env: stg
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: product-service
+  template:
+    metadata:
+      labels:
+        app: product-service
+    spec:
+      containers:
+        - name: product-service
+          image: tantran0411/e-commerce-product-service:gha-staging-master-2449dd2
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080

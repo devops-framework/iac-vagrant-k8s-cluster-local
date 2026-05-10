@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: storefront-override-config
+  namespace: frontend-stg
+data:
+  ORDER_SERVICE_BASE_URL: "order-service.backend-stg:8080"
+  PRODUCT_SERVICE_BASE_URL: "product-service.backend-stg:8080"
