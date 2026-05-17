@@ -68,7 +68,6 @@ jobs:
         with:
           repository: devops-framework/iac-vagrant-k8s-cluster-local
           token: ${{ steps.generate-token.outputs.token }}
-          ref: develop/homelab/centralized-k8s-manifest
           path: iac-repo
 
       - name: Restore Maven repository cache
