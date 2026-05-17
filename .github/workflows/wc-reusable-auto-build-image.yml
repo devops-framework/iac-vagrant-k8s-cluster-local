@@ -26,6 +26,10 @@ on:
         required: true
       DOCKER_PASSWORD:
         required: true
+      IAC_APP_ID:
+        required: true
+      IAC_APP_PRIVATE_KEY:
+        required: true
 
 jobs:
   build:
@@ -50,11 +54,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Generate token from GitHub App
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.IAC_APP_ID }}
+          private-key: ${{ secrets.IAC_APP_PRIVATE_KEY }}
+          owner: devops-framework
+          repositories: iac-vagrant-k8s-cluster-local
+
       - name: Checkout iac repo
         uses: actions/checkout@v4
         with:
           repository: devops-framework/iac-vagrant-k8s-cluster-local
-          token: ${{ secrets.IAC_REPO_WRITE_TOKEN }}
+          token: ${{ steps.generate-token.outputs.token }}
           ref: develop/homelab/centralized-k8s-manifest
           path: iac-repo
 
@@ -117,7 +130,7 @@ jobs:
         id: iac-commit
         shell: bash
         env:
-          IAC_TOKEN: ${{ secrets.IAC_REPO_WRITE_TOKEN }}
+          IAC_TOKEN: ${{ steps.generate-token.outputs.token }}
         run: |
           set -euo pipefail
           pushd iac-repo
