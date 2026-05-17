@@ -36,6 +36,8 @@ jobs:
     name: 🚀 Build Docker & Push
     runs-on: stg-ci-runner-set
     environment: ${{ inputs.gha_environment }}
+    permissions:
+      contents: write
     steps:
       - name: Discord start notification
         uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/discord-notifier@dev
