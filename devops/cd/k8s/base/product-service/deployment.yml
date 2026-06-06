@@ -24,3 +24,18 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
+
+          # VỊ TRÍ CHÍNH XÁC CỦA RESOURCES & LIMITS:
+          resources:
+            requests:
+              memory: "256Mi"   # Mức RAM tối thiểu Pod cần để được lập lịch vào Node
+              cpu: "250m"      # Mức CPU tối thiểu (250 millicores = 0.25 Core)
+            limits:
+              memory: "512Mi"   # Mức RAM tối đa Container được phép chạm tới (Vượt quá sẽ bị OOMKilled)
+              cpu: "500m"      # Mức CPU tối đa Container được phép tiêu thụ (Vượt quá sẽ bị Throttling)
+          
+          # Các cấu hình khác của container như Probes, Env đặt cùng cấp với resources
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
