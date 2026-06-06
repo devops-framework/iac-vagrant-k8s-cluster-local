@@ -3,6 +3,8 @@ reviews:
   profile: "assertive"
   auto_review:
     enabled: false
+  review_status:
+    enabled: false
 
 chat:
   auto_reply: true
