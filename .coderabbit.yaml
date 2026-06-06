@@ -1,6 +1,4 @@
 # .coderabbit.yaml
-language: "vi"
-
 reviews:
   profile: "assertive"
   auto_review:
