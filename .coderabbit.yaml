@@ -1,8 +1,10 @@
 # .coderabbit.yaml
-language: "assertive" # Đặt ngôn ngữ phản hồi là tiếng Việt
+language: "vi"
+
 reviews:
-  profile: "chill" # Phong cách review nhẹ nhàng, hoặc "assertive" nếu muốn khắt khe hơn
-  auto_review: false # TẮT tự động review khi mở PR
+  profile: "assertive"
+  auto_review:
+    enabled: false
 
 chat:
-  auto_reply: true # Cho phép bạn chat qua lại với bot dưới comment để giải trình về code
+  auto_reply: true
