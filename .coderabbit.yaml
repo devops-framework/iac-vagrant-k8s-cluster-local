@@ -1,9 +1,0 @@
-# .coderabbit.yaml
-reviews:
-  profile: "assertive"
-  auto_review:
-    enabled: false
-  # review_status: false
-
-chat:
-  auto_reply: true

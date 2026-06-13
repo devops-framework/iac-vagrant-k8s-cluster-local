@@ -1,0 +1,37 @@
+name: AI Review Cache Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup-cache:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+
+    steps:
+      - name: Generate GitHub App Token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.IAC_APP_ID }}
+          private-key: ${{ secrets.IAC_APP_PRIVATE_KEY }}
+
+      - name: Delete PR Source Code Cache
+        env:
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+        run: |
+          CACHE_KEYS=$(gh api /repos/${{ github.repository }}/actions/caches \
+            --jq ".actions_caches[] | select(.key | contains(\"source-context-${{ github.event.pull_request.number }}-\")) | .key")
+
+          if [ -z "$CACHE_KEYS" ]; then
+            echo "Không tìm thấy file cache của PR #${{ github.event.pull_request.number }}."
+          else
+            echo "Đang dọn dẹp cache của PR #${{ github.event.pull_request.number }}..."
+            for KEY in $CACHE_KEYS; do
+              gh api --method DELETE /repos/${{ github.repository }}/actions/caches?key=$KEY
+              echo "=> Đã xóa: $KEY"
+            done
+            echo "🧹 Hệ thống đã sạch sẽ!"
+          fi
