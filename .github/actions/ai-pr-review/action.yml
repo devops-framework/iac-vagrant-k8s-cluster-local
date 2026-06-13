@@ -1,0 +1,171 @@
+name: "ai-pr-review"
+description: "Composite action encapsulating the AI review job: checkout, create GitHub App token, fetch PR branch, build source context, run AI script, commit/push, and reactions. Caller must provide required env/secrets."
+
+runs:
+  using: "composite"
+  steps:
+    - name: Generate GitHub App Token
+      id: generate-token
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ env.IAC_APP_ID }}
+        private-key: ${{ env.IAC_APP_PRIVATE_KEY }}
+
+    - name: Fetch and Checkout PR Branch
+      id: checkout-pr
+      env:
+        GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+        PR_NUM: ${{ env.PR_NUMBER }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Attempt to checkout the PR branch using gh (requires gh in runner)
+        gh pr checkout "$PR_NUM"
+
+    - name: Add "In Progress" Reaction
+      env:
+        GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+        GITHUB_REPOSITORY: ${{ env.GITHUB_REPOSITORY }}
+        COMMENT_ID: ${{ env.COMMENT_ID }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        RESP=""
+        if RESP=$(gh api -X POST -H "Accept: application/vnd.github+json" /repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}/reactions -f content='eyes' 2>/dev/null); then
+          REACT_ID=$(echo "$RESP" | python -c "import sys,json;data=sys.stdin.read().strip();print(json.loads(data).get('id','') if data else '')" 2>/dev/null || true)
+        else
+          REACT_ID=""
+        fi
+
+        if [ -z "${REACT_ID:-}" ] || [ "$REACT_ID" = "null" ]; then
+          LIST=$(gh api -H "Accept: application/vnd.github+json" /repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}/reactions || true)
+          if [ -n "$LIST" ]; then
+            REACT_ID=$(echo "$LIST" | python -c "import sys,json;data=sys.stdin.read().strip();arr=json.loads(data) if data else [];print(next((r.get('id') for r in arr if r.get('content')=='eyes'), ''))" 2>/dev/null || true)
+          fi
+        fi
+
+        if [ -n "$REACT_ID" ] && [ "$REACT_ID" != "null" ]; then
+          echo "REACT_ID=$REACT_ID" >> $GITHUB_ENV
+          echo "Created/found reaction id: $REACT_ID"
+        else
+          echo "No eyes reaction id available (creation/list may have failed)." >&2
+        fi
+
+    # ================= GITHUB ACTIONS CACHE LAYER =================
+    - name: Cache Source Context File
+      id: github-cache
+      uses: actions/cache@v4
+      with:
+        path: source_context.txt
+        # Primary key uses the current commit SHA so cache is unique per commit
+        key: source-context-${{ env.PR_NUMBER }}-${{ github.sha }}
+        # Allow restoring a previous cache for the same PR by using a prefix
+        restore-keys: |
+          source-context-${{ env.PR_NUMBER }}-
+
+    - name: Build or Update Source Context
+      env:
+        PR_NUMBER: ${{ env.PR_NUMBER }}
+      shell: bash
+      run: |
+        if [ ! -f "source_context.txt" ]; then
+          echo "=> Cache Miss! Scanning repository for source files..."
+          find . -type f \( -name "*.js" -o -name "*.ts" -o -name "*.tsx" -o -name "*.py" -o -name "*.yaml" -o -name "*.yml" -o -name "Dockerfile" -o -name "*.Dockerfile" -o -name "*.sh" \) \
+            -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' -not -path '*/build/*' -not -name ".env" -not -name "*.pem" -not -name "id_rsa*" -not -path '*/secrets/*' -not -path '*/.aws/*' | while read -r file; do
+              sz=$(wc -c <"$file" || echo 0)
+              if [ "$sz" -gt 204800 ]; then
+                echo "Skipping large file: $file (size=${sz} bytes)"
+                continue
+              fi
+              echo "--- FILE PATH: $file ---" >> source_context.txt
+              awk '{ if (tolower($0) ~ /password|secret|token|api[_-]?key|private[_-]?key/) { print "[REDACTED_SENSITIVE_LINE]" } else print }' "$file" >> source_context.txt
+              echo -e "\n\n" >> source_context.txt
+            done
+        else
+          echo "=> Cache Hit! Loaded source context from cache."
+        fi
+    # ===============================================================
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Dependencies
+      shell: bash
+      run: |
+        npm install @google/genai@latest --no-save
+
+    - name: Run Review & Auto-fix Script
+      id: ai-script
+      env:
+        GEMINI_API_KEY: ${{ env.GEMINI_API_KEY }}
+        GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+        PR_NUMBER: ${{ env.PR_NUMBER }}
+        USER_COMMENT: ${{ env.USER_COMMENT }}
+        COMMENT_ID: ${{ env.COMMENT_ID }}
+      shell: bash
+      run: |
+        node .github/scripts/ai-review.js
+
+    - name: Commit and Push Changes (If any)
+      env:
+        GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+        GITHUB_REPOSITORY: ${{ env.GITHUB_REPOSITORY }}
+      shell: bash
+      run: |
+        git config --global user.name "DevOps-Lead-Review-Bot[bot]"
+        git config --global user.email "123456+DevOps-Lead-Review-Bot[bot]@users.noreply.github.com"
+
+        if [ -f "commit_msg.txt" ]; then
+          if [ -n "$(git status --porcelain)" ]; then
+            git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+            git add -A
+            git commit -F commit_msg.txt
+            rm commit_msg.txt
+            git push origin HEAD
+            echo "Changes applied successfully by GitHub App."
+          else
+            echo "No files changed. Skipping commit."
+            rm commit_msg.txt
+          fi
+        else
+          echo "AI chose NOT to commit. Skipping git push."
+        fi
+
+    - name: Add final Reaction (remove 'eyes' then post)
+      if: always()
+      env:
+        GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+        GITHUB_REPOSITORY: ${{ env.GITHUB_REPOSITORY }}
+        COMMENT_ID: ${{ env.COMMENT_ID }}
+        JOB_STATUS: ${{ job.status }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        CONTENT='confused'
+
+        # Remove previous 'eyes' reaction if we captured its id earlier
+        if [ -n "${REACT_ID:-}" ] && [ "${REACT_ID}" != "null" ]; then
+          gh api -X DELETE -H "Accept: application/vnd.github+json" /repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}/reactions/${REACT_ID} || true
+        fi
+
+        if [ "${JOB_STATUS}" = "success" ]; then
+          CONTENT='rocket'
+        fi
+
+        gh api \
+          -X POST \
+          -H "Accept: application/vnd.github+json" \
+          /repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}/reactions \
+          -f content="${CONTENT}"
+
+    - name: Write GitHub Job Summary
+      if: always()
+      env:
+        TRIGGER_COMMENT: ${{ env.USER_COMMENT }}
+        COMMENT_ID: ${{ env.COMMENT_ID }}
+      shell: bash
+      run: |
+        chmod +x .github/scripts/write-summary.sh
+        .github/scripts/write-summary.sh

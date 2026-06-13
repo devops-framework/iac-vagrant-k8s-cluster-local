@@ -1,11 +1,12 @@
 name: AI PR Comment Triggered Reviewer
+run-name: "🤖 AI Review [cmt-${{ github.event.comment.id }}]"
 
 on:
   issue_comment:
     types: [created]
 
 jobs:
-  review-and-commit:
+  ai-pr-review:
     if: github.event.issue.pull_request != null && contains(github.event.comment.body, '@tangpt')
     runs-on: ubuntu-latest
 
@@ -15,136 +16,26 @@ jobs:
       issues: write
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository (check out PR head so runner uses PR branch)
         uses: actions/checkout@v4
         with:
+          # checkout the PR branch that triggered the comment (issue_comment on a PR)
+          ref: refs/pull/${{ github.event.issue.number }}/head
           fetch-depth: 0
 
-      # Sinh Token động từ GitHub App để có Avatar đẹp và tự kích hoạt các CI test khác khi push code
-      - name: Generate GitHub App Token
-        id: generate-token
-        uses: actions/create-github-app-token@v1
-        with:
-          # Use numeric App ID secret (IAC_APP_ID) and the App private key
-          app-id: ${{ secrets.IAC_APP_ID }}
-          private-key: ${{ secrets.IAC_APP_PRIVATE_KEY }}
-
-      - name: Fetch and Checkout PR Branch
+      - name: Run AI PR review composite
+        uses: ./.github/actions/ai-pr-review
+        id: ai-pr-review
         env:
-          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
-        run: |
-          PR_NUM=${{ github.event.issue.number }}
-          gh pr checkout $PR_NUM
+          # App secrets (pass via repository secrets)
+          IAC_APP_ID: ${{ secrets.IAC_APP_ID }}
+          IAC_APP_PRIVATE_KEY: ${{ secrets.IAC_APP_PRIVATE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
-      # Thả icon 👀 báo lệnh đã vào hàng chờ xử lý
-      - name: Add "In Progress" Reaction
-        env:
-          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
-        run: |
-          gh api \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            /repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
-            -f content='eyes'
-
-      # ================= GITHUB ACTIONS CACHE LAYER =================
-      - name: Cache Source Context File
-        id: github-cache
-        uses: actions/cache@v4
-        with:
-          path: source_context.txt
-          key: source-context-${{ github.event.issue.number }}-${{ github.sha }}
-          restore-keys: |
-            source-context-${{ github.event.issue.number }}-
-
-      - name: Build or Update Source Context
-        run: |
-          if [ ! -f "source_context.txt" ]; then
-            echo "=> Cache Miss! Đang quét toàn bộ hệ thống..."
-            # Find relevant source files, include Dockerfile, exclude large binary or build dirs and common secret files
-            find . -type f \( -name "*.js" -o -name "*.ts" -o -name "*.tsx" -o -name "*.py" -o -name "*.yaml" -o -name "*.yml" -o -name "Dockerfile" -o -name "*.Dockerfile" -o -name "*.sh" \) \
-              -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' -not -path '*/build/*' -not -name ".env" -not -name "*.pem" -not -name "id_rsa*" -not -path '*/secrets/*' -not -path '*/.aws/*' | while read -r file; do
-                # Skip files that are too large for prompt (200KB)
-                sz=$(wc -c <"$file" || echo 0)
-                if [ "$sz" -gt 204800 ]; then
-                  echo "Skipping large file: $file (size=${sz} bytes)"
-                  continue
-                fi
-                echo "--- FILE PATH: $file ---" >> source_context.txt
-                # redact obvious secrets lines before appending (basic safety)
-                awk '{ if (tolower($0) ~ /password|secret|token|api[_-]?key|private[_-]?key/) { print "[REDACTED_SENSITIVE_LINE]" } else print }' "$file" >> source_context.txt
-                echo -e "\n\n" >> source_context.txt
-              done
-          else
-            echo "=> Cache Hit! Đã nạp file ngữ cảnh thành công."
-          fi
-      # ===============================================================
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Dependencies
-        run: |
-          # Install the official Google GenAI SDK without saving to package.json to avoid mutating repo
-          npm install @google/genai@latest --no-save
-
-      - name: Run Review & Auto-fix Script
-        id: ai-script
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} # DÙNG KEY MIỄN PHÍ TỪ GOOGLE AI STUDIO
-          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          # Per-run values
           PR_NUMBER: ${{ github.event.issue.number }}
-          USER_COMMENT: ${{ github.event.comment.body }}
           COMMENT_ID: ${{ github.event.comment.id }}
-        run: |
-          node .github/scripts/ai-review.js
+          GITHUB_REPOSITORY: ${{ github.repository }}
 
-      - name: Commit and Push Changes (If any)
-        env:
-          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
-        run: |
-          git config --global user.name "DevOps-Lead-Review-Bot[bot]"
-          git config --global user.email "123456+DevOps-Lead-Review-Bot[bot]@users.noreply.github.com"
-
-          if [ -f "commit_msg.txt" ]; then
-            if [ -n "$(git status --porcelain)" ]; then
-              # configure remote to use token so push can authenticate
-              git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git
-              git add -A
-              git commit -F commit_msg.txt
-              rm commit_msg.txt
-              git push origin HEAD
-              echo "Changes applied successfully by GitHub App."
-            else
-              echo "No files changed. Skipping commit."
-              rm commit_msg.txt
-            fi
-          else
-            echo "AI chose NOT to commit. Skipping git push."
-          fi
-
-      # Thành công -> Thả 🚀
-      - name: Add "Success" Reaction
-        if: success()
-        env:
-          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
-        run: |
-          gh api \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            /repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
-            -f content='rocket'
-
-      # Thất bại -> Thả 😕
-      - name: Add "Failed" Reaction
-        if: failure()
-        env:
-          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
-        run: |
-          gh api \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            /repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
-            -f content='confused'
+          # Optional metadata forwarded to composite
+          USER_COMMENT: ${{ github.event.comment.body }}

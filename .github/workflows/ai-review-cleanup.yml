@@ -1,4 +1,5 @@
 name: AI Review Cache Cleanup
+run-name: 🧹 Cache Cleanup
 
 on:
   pull_request:
@@ -26,12 +27,18 @@ jobs:
             --jq ".actions_caches[] | select(.key | contains(\"source-context-${{ github.event.pull_request.number }}-\")) | .key")
 
           if [ -z "$CACHE_KEYS" ]; then
-            echo "Không tìm thấy file cache của PR #${{ github.event.pull_request.number }}."
+            echo "No cache files found for PR #${{ github.event.pull_request.number }}."
+            echo "CACHE_KEYS_LIST=" >> $GITHUB_ENV
+            echo "DELETED_COUNT=0" >> $GITHUB_ENV
           else
-            echo "Đang dọn dẹp cache của PR #${{ github.event.pull_request.number }}..."
+            echo "Cleaning cache for PR #${{ github.event.pull_request.number }}..."
+            COUNT=0
             for KEY in $CACHE_KEYS; do
               gh api --method DELETE /repos/${{ github.repository }}/actions/caches?key=$KEY
-              echo "=> Đã xóa: $KEY"
+              echo "=> Deleted: $KEY"
+              COUNT=$((COUNT+1))
             done
-            echo "🧹 Hệ thống đã sạch sẽ!"
+            echo "CACHE_KEYS_LIST=$CACHE_KEYS" >> $GITHUB_ENV
+            echo "DELETED_COUNT=$COUNT" >> $GITHUB_ENV
+            echo "🧹 Cache cleanup completed."
           fi
