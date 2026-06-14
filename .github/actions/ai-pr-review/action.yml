@@ -22,9 +22,7 @@ runs:
         GH_TOKEN: ${{ steps.generate-token.outputs.token }}
         PR_NUM: ${{ env.PR_NUMBER }}
       shell: bash
-      run: |
-        set -euo pipefail
-        gh pr checkout "$PR_NUM"
+      run: gh pr checkout "$PR_NUM"
 
     - name: Add "In Progress" Comment & Reaction
       env:
@@ -94,7 +92,8 @@ runs:
         if [ -f "commit_msg.txt" ]; then
           if [ -n "$(git status --porcelain)" ]; then
             git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
-            git add -A
+            git add .
+            git reset node_modules/ 2>/dev/null || true
             git commit -F commit_msg.txt
             rm commit_msg.txt
             git push origin HEAD

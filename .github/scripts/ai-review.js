@@ -5,7 +5,6 @@ const { GoogleGenAI, Type } = require('@google/genai');
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// THIẾT KẾ SCHEMA MỚI: TẬP TRUNG HOÀN TOÀN VÀO INLINE COMMENTS THEO DÒNG CODE
 const ResponseSchema = {
   type: Type.OBJECT,
   properties: {
@@ -34,8 +33,11 @@ const ResponseSchema = {
       },
       required: ["what_changed", "benefit", "testcases"]
     },
-    mermaid_diagram: { type: Type.STRING, description: "Sơ đồ Mermaid thể hiện luồng hệ thống." },
-    // CHUYỂN ĐỒI TOÀN BỘ SEVERITY VÀ CODESUGGEST VÀO MỘT MẢNG INLINE COMMENTS
+    mermaid_diagram: { 
+      type: Type.STRING, 
+      // ✅ ĐÃ CẢI TIẾN: Ràng buộc chặt chẽ trong Schema để mô hình không sinh ra nháy kép gây lỗi render
+      description: "Sơ đồ Mermaid thể hiện luồng hệ thống. CHÚ Ý QUAN TRỌNG: Để tránh lỗi biên dịch cú pháp Mermaid, TUYỆT ĐỐI không sử dụng ký tự nháy kép (\") bên trong nhãn của các Node (ví dụ: viết E[Add 'Eyes' Reaction] hoặc E[Add Eyes Reaction] thay vì E[Add \"Eyes\" Reaction])." 
+    },
     inline_reviews: {
       type: Type.ARRAY,
       description: "Danh sách tất cả các vị trí mã nguồn phát hiện lỗi bảo mật, sai quy chuẩn hoặc cần tối ưu cấu hình.",
@@ -57,8 +59,11 @@ const ResponseSchema = {
   required: ["action_type", "pr_description", "mermaid_diagram", "inline_reviews"]
 };
 
-function buildLiveRepositoryContext(dirPath, extFilter = ['.yml', '.yaml', '.cfg', 'Vagrantfile', '.tpl'], maxLen = 120000) {
+function buildLiveRepositoryContext(dirPath, extFilter = ['.yml', '.yaml', '.cfg', 'Vagrantfile', '.tpl'], maxLen = 120000, maxFileBytes = 204800) {
   let contextText = "=== REPOSITORY LIVE CONTEXT ===\n";
+  const skippedFiles = [];
+  let filesAdded = 0;
+  let filesConsidered = 0;
   function walk(currentDir) {
     if (contextText.length >= maxLen) return;
     const files = fs.readdirSync(currentDir);
@@ -68,17 +73,33 @@ function buildLiveRepositoryContext(dirPath, extFilter = ['.yml', '.yaml', '.cfg
       if (fs.statSync(fullPath).isDirectory()) { walk(fullPath); } 
       else {
         if (extFilter.some(ext => file.endsWith(ext) || file === ext)) {
+          filesConsidered += 1;
+          try {
+            const size = fs.statSync(fullPath).size;
+            if (size > maxFileBytes) {
+              contextText += `\n--- FILE: ${fullPath} (skipped, size ${size} bytes) ---\n`;
+              skippedFiles.push({ path: fullPath, size });
+              continue;
+            }
+          } catch (e) {
+            continue;
+          }
+
           contextText += `\n--- FILE: ${fullPath} ---\n`;
           let content = fs.readFileSync(fullPath, 'utf8');
           content = content.replace(/-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----/g, '[REDACTED_KEY]');
           content = content.replace(/\b(password|secret|token|api[_-]?key)\b.*$/gim, '[REDACTED_LINE]');
           contextText += content + "\n";
+          filesAdded += 1;
         }
       }
     }
   }
   try { walk(dirPath); } catch (err) {}
-  return contextText.slice(0, maxLen);
+  return {
+    context: contextText.slice(0, maxLen),
+    stats: { filesAdded, filesConsidered, filesSkipped: skippedFiles.length, skippedFiles }
+  };
 }
 
 async function run() {
@@ -86,35 +107,61 @@ async function run() {
   const rawComment = process.env.USER_COMMENT || '';
   const repo = process.env.GITHUB_REPOSITORY;
 
+  // Cấu hình môi trường bảo mật token để gh CLI luôn được xác thực trong execSync
+  const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  const ghEnv = ghToken ? `GH_TOKEN=${ghToken} ` : '';
+
   const lowerComment = rawComment.toLowerCase();
   const isDescriptionRequested = lowerComment.includes('description') || lowerComment.includes('desc') || lowerComment.includes('mô tả');
 
   let baseRef = 'main';
   try {
-    const detected = execSync(`gh pr view ${prNumber} --json baseRefName --jq .baseRefName`).toString().trim();
+    const detected = execSync(`${ghEnv}gh pr view ${prNumber} --json baseRefName --jq .baseRefName`).toString().trim();
     if (detected) baseRef = detected;
   } catch (e) {}
 
   try { execSync(`git fetch origin ${baseRef}`, { stdio: 'ignore' }); } catch (e) {}
   const prDiff = execSync(`git diff origin/${baseRef}...HEAD`).toString();
-  const sourceContext = buildLiveRepositoryContext(process.cwd());
+  const maxFileBytes = Number(process.env.MAX_FILE_BYTES || '204800');
+  const includeMetrics = (process.env.INCLUDE_METRICS || 'true').toLowerCase() === 'true';
+  const ctxResult = buildLiveRepositoryContext(process.cwd(), undefined, 120000, maxFileBytes);
+  const sourceContext = ctxResult.context;
+  const contextStats = ctxResult.stats;
 
-  const response = await ai.models.generateContent({
+  const responseAI = await ai.models.generateContent({
     model: 'gemini-2.5-flash',
     contents: [
       {
         role: 'user',
         parts: [
-          { text: "Bạn là một Chuyên gia DevOps Senior phụ trách review tự động. Bạn phân tích Git Diff và bắt buộc phải gán nhãn mức độ Severity (high/medium/low) kèm code sửa đổi trực tiếp vào từng dòng lỗi trong mảng inline_reviews." },
+          // ✅ ĐÃ CẢI TIẾN: Bổ sung chỉ thị loại trừ ký tự nháy kép (\") trong prompt hệ thống để Gemini chú ý hơn
+          { text: "Bạn là một Chuyên gia DevOps Senior phụ trách review tự động. Bạn phân tích Git Diff và bắt buộc phải gán nhãn mức độ Severity (high/medium/low) kèm code sửa đổi trực tiếp vào từng dòng lỗi trong mảng inline_reviews. QUY TẮC MERMAID: Không bao giờ sử dụng dấu nháy kép (\") hoặc các ký tự đặc biệt làm gãy cú pháp bên trong nhãn node (ví dụ: dùng nháy đơn E[Add 'Eyes' Reaction] hoặc viết thường E[Add Eyes Reaction])." },
           { text: `${sourceContext}\n\nĐoạn mã thay đổi của PR hiện tại (Diff):\n${prDiff}\n\nLời nhắn từ user: ${rawComment}` }
         ]
       }
     ],
-    config: { responseMimeType: "application/json", responseSchema: ResponseSchema, temperature: 0.1 }
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: ResponseSchema,
+      temperature: 0.1
+    }
   });
 
+  const rawText = responseAI.text;
+  if (!rawText) {
+    console.error("❌ AI không trả về kết quả hợp lệ.");
+    process.exit(1);
+  }
+
   let result = null;
-  try { result = JSON.parse(response.text); } catch (err) { process.exit(1); }
+  try {
+    const cleanJson = rawText.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
+    result = JSON.parse(cleanJson);
+  } catch (err) {
+    console.error("❌ Không thể phân tích JSON từ AI.");
+    console.error("Nội dung gốc AI trả về:", rawText);
+    process.exit(1);
+  }
 
   // ================= 1. PR DESCRIPTION =================
   if (isDescriptionRequested) {
@@ -128,23 +175,22 @@ async function run() {
     }
     const updatedPrBody = `## 📑 1. WHAT CHANGED (Nội dung thay đổi)\n${descData.what_changed}\n\n## 🎯 2. BENEFIT (Giá trị & Lợi ích mang lại)\n> 💡 **Tác động hệ thống:**\n> ${descData.benefit}\n\n## 🧪 3. TESTCASES (Trạng thái ma trận kiểm thử)\n${testcaseTable}\n\n---\n*⚡ Báo cáo tóm tắt PR này được cập nhật tự động theo yêu cầu của Lập trình viên.*`;
     fs.writeFileSync('pr_body.md', updatedPrBody);
-    try { execSync(`gh pr edit ${prNumber} --body-file=pr_body.md`); } catch (e) {}
+    try { execSync(`${ghEnv}gh pr edit ${prNumber} --body-file=pr_body.md`); } catch (e) {}
   }
 
-  // ================= 2. MERMAID DIAGRAM CONVERSATION (KHÔNG CÒN BẢNG SEVERITY) =================
+  // ================= 2. MERMAID DIAGRAM CONVERSATION =================
   let mermaidSection = '';
   if (result.mermaid_diagram && result.mermaid_diagram.trim().length > 0) {
     mermaidSection = `### 🗺️ SƠ ĐỒ BIẾN ĐỔI KIẾN TRÚC HỆ THỐNG (ASIS ➡️ TOBE)\n\`\`\`mermaid\n${result.mermaid_diagram.replace(/```mermaid/g, '').replace(/```/g, '').trim()}\n\`\`\``;
   }
 
-  // Stable marker so we update the same conversation comment instead of creating new ones
   const COMMENT_MARKER = '<!-- AI-COMPOSITE-MERMAID-MARKER -->';
-  const commentIdentifier = COMMENT_MARKER;
-  const fullCommentBody = `${commentIdentifier}\n# BÁO CÁO PHÂN TÍCH HỆ THỐNG (tóm tắt)\n\n${mermaidSection}\n\n> Cập nhật: \`${new Date().toLocaleString('vi-VN')}\``;
+  const fullCommentBody = `${COMMENT_MARKER}\n# BÁO CÁO PHÂN TÍCH HỆ THỐNG (tóm tắt)\n\n${mermaidSection}\n\n> Cập nhật: \`${new Date().toLocaleString('vi-VN')}\``;
 
   let existingCommentId = null;
   try {
-    const commentsRaw = execSync(`gh pr view ${prNumber} --json comments --jq .comments`, { stdio: ['pipe', 'pipe', 'ignore'] }).toString().trim();
+    // Thay thế "gh pr view" bằng "gh api" để lấy danh sách bình luận chứa ID số nguyên (REST ID) thay vì ID GraphQL
+    const commentsRaw = execSync(`${ghEnv}gh api /repos/${repo}/issues/${prNumber}/comments`, { stdio: ['pipe', 'pipe', 'ignore'] }).toString().trim();
     if (commentsRaw) {
       const comments = JSON.parse(commentsRaw);
       const botComment = comments.find(c => c.body && c.body.includes("AI-COMPOSITE-MERMAID-MARKER"));
@@ -153,36 +199,68 @@ async function run() {
   } catch (e) {}
 
   if (existingCommentId) {
+    const patchJsonPayload = 'summary_patch.json';
+    fs.writeFileSync(patchJsonPayload, JSON.stringify({ body: fullCommentBody }));
     try {
-      execSync(`gh api -X PATCH /repos/${repo}/issues/comments/${existingCommentId} -f body="${fullCommentBody.replace(/"/g, '\\"')}"`);
+      // Sử dụng --input cùng ID số nguyên chính xác để PATCH comment mà không bị lỗi 404
+      execSync(`${ghEnv}gh api -X PATCH /repos/${repo}/issues/comments/${existingCommentId} --input ${patchJsonPayload}`);
     } catch (patchErr) {
-      fs.writeFileSync('conversation_comment.md', fullCommentBody);
-      execSync(`gh pr comment ${prNumber} --body-file=conversation_comment.md`);
+      const commentFile = 'conversation_comment.md';
+      fs.writeFileSync(commentFile, fullCommentBody);
+      execSync(`${ghEnv}gh pr comment ${prNumber} --body-file=${commentFile}`);
+      try { fs.unlinkSync(commentFile); } catch (e) {}
     }
+    try { fs.unlinkSync(patchJsonPayload); } catch (e) {}
   } else {
-    fs.writeFileSync('conversation_comment.md', fullCommentBody);
-    execSync(`gh pr comment ${prNumber} --body-file=conversation_comment.md`);
+    const commentFile = 'conversation_comment.md';
+    fs.writeFileSync(commentFile, fullCommentBody);
+    execSync(`${ghEnv}gh pr comment ${prNumber} --body-file=${commentFile}`);
+    try { fs.unlinkSync(commentFile); } catch (e) {}
   }
 
-  // ================= 3. ĐẨY LỖI SEVERITY VÀ CODESUGGEST TRỰC TIẾP VÀO TỪNG DÒNG FILE CHANGES =================
+  if (result.action_type === 'comment_only') {
+    try {
+      let metricsSection = '';
+      if (includeMetrics && contextStats) {
+        metricsSection = `\n\nFiles scanned: ${contextStats.filesConsidered}, files added to context: ${contextStats.filesAdded}, files skipped: ${contextStats.filesSkipped}`;
+      }
+
+      const cleanSummary = `${COMMENT_MARKER}\n# BÁO CÁO PHÂN TÍCH HỆ THỐNG (tóm tắt)\n\n${mermaidSection}\n\n✅ No issues found by automated review.${metricsSection}\n\nCập nhật: \`${new Date().toLocaleString('vi-VN')}\``;
+      
+      if (existingCommentId) {
+        const cleanJsonPayload = 'clean_summary.json';
+        fs.writeFileSync(cleanJsonPayload, JSON.stringify({ body: cleanSummary }));
+        execSync(`${ghEnv}gh api -X PATCH /repos/${repo}/issues/comments/${existingCommentId} --input ${cleanJsonPayload}`);
+        try { fs.unlinkSync(cleanJsonPayload); } catch (e) {}
+      } else {
+        const cleanFile = 'clean_summary.tmp.md';
+        fs.writeFileSync(cleanFile, cleanSummary);
+        execSync(`${ghEnv}gh pr comment ${prNumber} --body-file=${cleanFile}`);
+        try { fs.unlinkSync(cleanFile); } catch (e) {}
+      }
+
+      try {
+        execSync(`${ghEnv}gh api -X POST /repos/${repo}/pulls/${prNumber}/reviews -f body="✅ Automated AI review: no issues found." -f event=COMMENT`);
+      } catch (e) {}
+    } catch (e) {}
+    return;
+  }
+
+  // ================= 3. ĐẨY LỖI SEVERITY VÀ CODESUGGEST TRỰC TIẾP VÀO TỪNG DÒNG =================
   if (result.action_type === 'suggest_ui' && result.inline_reviews && result.inline_reviews.length > 0) {
     console.log(`Found ${result.inline_reviews.length} inline review(s) from AI.`);
     try {
-      const prFilesRaw = execSync(`gh api -H "Accept: application/vnd.github+json" /repos/${repo}/pulls/${prNumber}/files`).toString();
+      const prFilesRaw = execSync(`${ghEnv}gh api -H "Accept: application/vnd.github+json" /repos/${repo}/pulls/${prNumber}/files`).toString();
       const prFiles = JSON.parse(prFilesRaw);
 
-      // Fetch existing inline review comments on the PR to avoid duplicates
       let existingInline = [];
       try {
-        const existingRaw = execSync(`gh api -H "Accept: application/vnd.github+json" /repos/${repo}/pulls/${prNumber}/comments`).toString();
+        const existingRaw = execSync(`${ghEnv}gh api -H "Accept: application/vnd.github+json" /repos/${repo}/pulls/${prNumber}/comments`).toString();
         existingInline = JSON.parse(existingRaw);
-      } catch (e) {
-        existingInline = [];
-      }
+      } catch (e) {}
 
       function normalizeText(s) {
         if (!s) return '';
-        // remove suggestion fences and code fences, normalize whitespace and lowercase
         return s
           .replace(/```suggestion[\s\S]*?```/g, '')
           .replace(/```[\s\S]*?```/g, '')
@@ -208,6 +286,18 @@ async function run() {
         return inter / Math.min(ta.length, tb.length);
       }
 
+      function codeMatchesReason(review) {
+        const suggested = (review.suggested_code || '').slice(0, 1000).trim();
+        if (!suggested) return { matches: false, score: 0 };
+        const comment = (review.comment || '').trim();
+        const title = (review.title || '').trim();
+        const sim1 = tokenSimilarity(suggested, comment);
+        const sim2 = tokenSimilarity(suggested, title);
+        const sim = Math.max(sim1, sim2);
+        // ✅ ĐÃ SỬA: Tăng ngưỡng độ tương đồng từ 0.25 lên 0.5 để đảm bảo an toàn tối đa cho việc tự động áp dụng (auto-apply) gợi ý
+        return { matches: sim >= 0.5, score: sim };
+      }
+
       function alreadyPosted(review) {
         if (!existingInline || existingInline.length === 0) return false;
         const snippet = (review.suggested_code || '').slice(0, 240).trim();
@@ -216,16 +306,12 @@ async function run() {
             if (!c.path) return false;
             if (c.path !== review.path && c.path !== review.path.replace(/^\//, '')) return false;
             const bodyNorm = normalizeText(c.body || '');
-            // 1) exact title match
             if (review.title && bodyNorm.includes(review.title.toLowerCase())) return true;
-            // 2) snippet exact
             if (snippet && bodyNorm.includes(normalizeText(snippet))) return true;
-            // 3) token similarity check between suggested code and existing comment body
             if (snippet) {
               const sim = tokenSimilarity(snippet, bodyNorm);
-              if (sim >= 0.6) return true; // 60% token overlap considered duplicate
+              if (sim >= 0.6) return true;
             }
-            // 4) also check similarity between review.comment and existing body
             if (review.comment) {
               const sim2 = tokenSimilarity(review.comment, bodyNorm);
               if (sim2 >= 0.6) return true;
@@ -234,10 +320,8 @@ async function run() {
           } catch (e) { return false; }
         });
       }
+      
       const commentsPayload = [];
-
-      // Auto-apply small fixes heuristic: if the suggested change is small (<= 10 lines)
-      // and the target file exists in workspace, apply it locally and prepare a commit message.
       const autoApplied = [];
 
       function safeApplySuggestion(review) {
@@ -249,62 +333,52 @@ async function run() {
           const end = Number(review.end_line) || start;
           const suggestedLines = (review.suggested_code || '').replace(/\r\n/g, '\n').split('\n');
           const linesToReplace = Math.max(1, end - start + 1);
-          if (suggestedLines.length > 10 || linesToReplace > 20) return false; // too big
+          if (suggestedLines.length > 10 || linesToReplace > 20) return false;
 
-          // 1-indexed to 0-indexed
           const before = fileContent.slice(0, start - 1);
           const after = fileContent.slice(end);
           const newContent = before.concat(suggestedLines).concat(after).join('\n');
           fs.writeFileSync(targetPath, newContent, 'utf8');
           autoApplied.push({ path: review.path, start, end, lines: suggestedLines.length });
           return true;
-        } catch (e) {
-          return false;
-        }
+        } catch (e) { return false; }
       }
 
       result.inline_reviews.forEach(review => {
-        // Skip if we've already posted the same or similar suggestion on this PR
         if (alreadyPosted(review)) {
           console.log(`Skipping duplicate review for ${review.path} - ${review.title || '[no title]'}`);
           return;
         }
-        // Định dạng nhãn Severity bắt mắt trực tiếp trong hội thoại của dòng code
         let sevLabel = review.severity === 'high' ? '🛑 [HIGH]' : review.severity === 'medium' ? '🟡 [MEDIUM]' : '🟢 [LOW]';
-
-        // Minimal inline suggestion body — avoid leader/marketing phrases. Put severity, short reason and suggestion.
         const inlineBody = `${sevLabel} - ${review.title}\n> ${review.comment}\n\n\`\`\`suggestion\n${review.suggested_code}\n\`\`\``;
 
-        // Try to auto-apply small fixes; if applied, note it in the inline body
-        const wasAuto = safeApplySuggestion(review);
-        const appliedNote = wasAuto ? '\n*(Auto-applied by AI: small/syntax fix — change committed)*' : '';
-        const inlineBodyFinal = inlineBody + appliedNote;
-
-        let mappedPosition = null;
-        const fileObj = prFiles.find(f => f.filename === review.path || f.filename === review.path.replace(/^\//, ''));
-        if (fileObj && fileObj.patch) {
-          mappedPosition = mapLineToDiffPosition(fileObj.patch, Number(review.end_line) || Number(review.start_line) || 1);
+        const matchInfo = codeMatchesReason(review);
+        let wasAuto = false;
+        if (matchInfo.matches) {
+          wasAuto = safeApplySuggestion(review);
         }
+        const appliedNote = wasAuto ? '\n*(Auto-applied by AI: small/syntax fix — change committed)*' : '';
+        const cautionNote = !matchInfo.matches ? `\n\n⚠️ Caution: suggested code may not match the described issue (confidence=${matchInfo.score.toFixed(2)}). Please verify before applying.` : '';
+        const inlineBodyFinal = inlineBody + appliedNote + cautionNote;
 
-        const usePosition = mappedPosition || Number(review.end_line) || 1;
         commentsPayload.push({
           path: review.path,
-          position: usePosition,
+          line: Number(review.end_line) || Number(review.start_line) || 1,
+          side: "RIGHT",
           body: inlineBodyFinal
         });
       });
 
-      // If we auto-applied any fixes, write a concise commit message for the composite action to pick up
       if (autoApplied.length > 0) {
         const lines = ['AI auto-applied small fixes:', ''];
-        autoApplied.forEach((a, idx) => {
+        autoApplied.forEach(a => {
           lines.push(`- ${a.path}: replaced lines ${a.start}-${a.end} (new ${a.lines} lines)`);
         });
         fs.writeFileSync('commit_msg.txt', lines.join('\n'));
       }
 
       const reviewPayload = {
-        body: "📢 **AI Reviewer phát hiện lỗi bảo mật / sai quy chuẩn cấu hình trực tiếp trên các dòng code sau:**",
+        body: "📢 **Please check these comments**",
         event: "COMMENT",
         comments: commentsPayload
       };
@@ -318,24 +392,19 @@ async function run() {
     }
   }
 
-  // Thu dọn file tạm
+  try {
+    if (typeof contextStats !== 'undefined' && contextStats) {
+      console.log(`AI review context metrics: filesConsidered=${contextStats.filesConsidered}, filesAdded=${contextStats.filesAdded}, filesSkipped=${contextStats.filesSkipped}`);
+    }
+  } catch (e) {}
+
   ['pr_body.md', 'conversation_comment.md', 'review_payload.json'].forEach(f => {
     try { fs.unlinkSync(f); } catch (e) {}
   });
 }
 
-function mapLineToDiffPosition(filePatch, targetLine) {
-  if (!filePatch) return null;
-  const lines = filePatch.split('\n');
-  let position = 0, curNew = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]; position += 1;
-    const hunkMatch = line.match(/^@@ \-(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
-    if (hunkMatch) { curNew = parseInt(hunkMatch[3], 10); continue; }
-    if (line.startsWith('+')) { if (curNew === targetLine) return position; curNew += 1; }
-    else if (!line.startsWith('-')) { if (curNew === targetLine) return position; curNew += 1; }
-  }
-  return null;
-}
-
-run().catch(err => { process.exit(1); });
+run().catch(err => {
+  console.error("❌ Lỗi nghiêm trọng khi thực thi script:");
+  console.error(err);
+  process.exit(1);
+});

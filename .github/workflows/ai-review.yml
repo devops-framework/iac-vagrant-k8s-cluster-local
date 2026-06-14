@@ -39,3 +39,11 @@ jobs:
 
           # Optional metadata forwarded to composite
           USER_COMMENT: ${{ github.event.comment.body }}
+
+      - name: Upload skipped_files artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skipped_files
+          path: skipped_files.txt
+          if-no-files-found: warn
