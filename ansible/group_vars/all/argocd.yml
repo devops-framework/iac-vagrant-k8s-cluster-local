@@ -1,0 +1,61 @@
+---
+# Argo CD configuration. Pin the manifest to keep bootstrap reproducible.
+argocd_version: "v2.11.3"
+argocd_projects:
+  - project_name: "staging"
+    description: "Staging e-commerce workloads"
+    source_repos:
+      - "https://github.com/devops-framework/iac-vagrant-k8s-cluster-local.git"
+    destinations:
+      - server: "https://kubernetes.default.svc"
+        namespace: "frontend-stg"
+      - server: "https://kubernetes.default.svc"
+        namespace: "backend-stg"
+    namespace_resource_whitelist:
+      - group: ""
+        kind: ConfigMap
+      - group: ""
+        kind: Service
+      - group: ""
+        kind: ServiceAccount
+      - group: apps
+        kind: Deployment
+      - group: networking.k8s.io
+        kind: Ingress
+      - group: networking.k8s.io
+        kind: NetworkPolicy
+
+argocd_repos:
+  - name: "iac-k8s"
+    github_repo: "https://github.com/devops-framework/iac-vagrant-k8s-cluster-local.git"
+    project: "staging"
+    connection_method: "VIA HTTP/HTTPS"
+
+argocd_apps:
+  - app_name: "e-commerce-order-service"
+    project_name: "staging"
+    sync_policy: "Manual"
+    repo_url: "https://github.com/devops-framework/iac-vagrant-k8s-cluster-local.git"
+    revision_branches: "dev"
+    revision_tags: ""
+    path: "devops/cd/k8s/overlays/staging/order-service"
+    destination_cluster: "https://kubernetes.default.svc"
+    destination_namespace: "backend-stg"
+  - app_name: "e-commerce-jsf-storefront"
+    project_name: "staging"
+    sync_policy: "Manual"
+    repo_url: "https://github.com/devops-framework/iac-vagrant-k8s-cluster-local.git"
+    revision_branches: "dev"
+    revision_tags: ""
+    path: "devops/cd/k8s/overlays/staging/storefront"
+    destination_cluster: "https://kubernetes.default.svc"
+    destination_namespace: "frontend-stg"
+  - app_name: "e-commerce-product-service"
+    project_name: "staging"
+    sync_policy: "Manual"
+    repo_url: "https://github.com/devops-framework/iac-vagrant-k8s-cluster-local.git"
+    revision_branches: "dev"
+    revision_tags: ""
+    path: "devops/cd/k8s/overlays/staging/product-service"
+    destination_cluster: "https://kubernetes.default.svc"
+    destination_namespace: "backend-stg"

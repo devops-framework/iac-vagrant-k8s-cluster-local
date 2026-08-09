@@ -1,72 +1,70 @@
 ---
-- name: Update apt cache and install dependencies
-  apt:
-    name: 
-      - python3-pip
-      - python3-setuptools
-    state: present
-    update_cache: yes  # Lệnh này tương đương 'apt-get update'
-
-- name: Install kubernetes python library via pip
-  pip:
-    name: 
-      - kubernetes
-      - PyYAML
-
-# 1. Quản lý RBAC (Dùng module k8s thay vì shell kubectl)
-- name: Copy RBAC file to VM
-  copy:
-    src: "{{ role_path }}/settings/runner-rbac.yml"
-    dest: "/tmp/runner-rbac.yaml"
-    mode: '0644'
-
-- name: Apply RBAC for GitHub Runners
+# Remove permissions created by releases before the runner switched to GitOps-only delivery.
+- name: Remove legacy runner access from application namespaces
   kubernetes.core.k8s:
     kubeconfig: "/home/{{ ansible_user }}/.kube/config"
-    src: "/tmp/runner-rbac.yaml"
-    state: present # Ansible sẽ tự check, nếu trùng khớp thì không apply lại
+    api_version: rbac.authorization.k8s.io/v1
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ item.namespace }}"
+    state: absent
+  loop:
+    - kind: RoleBinding
+      name: runner-deploy-binding
+      namespace: frontend-stg
+    - kind: Role
+      name: runner-deploy-role
+      namespace: frontend-stg
+    - kind: RoleBinding
+      name: runner-deploy-binding
+      namespace: backend-stg
+    - kind: Role
+      name: runner-deploy-role
+      namespace: backend-stg
 
-# 2. Tạo file values (Giữ nguyên vì module copy vốn đã có tính idempotent - chỉ copy khi nội dung khác)
-- name: Write values files for GitHub runners
-  copy: # Dùng template nếu bạn muốn linh hoạt hơn, hoặc copy như cũ
-    dest: "/tmp/{{ item.runner_name }}-values.yaml"
-    mode: '0644'
-    content: |
+# Runner jobs follow GitOps and do not receive direct access to application namespaces.
+- name: Apply least-privilege ServiceAccount for GitHub runners
+  kubernetes.core.k8s:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+    src: "{{ role_path }}/files/runner-service-account.yml"
+    state: present
+
+# Install ARC Controller.
+- name: Install ARC Controller
+  kubernetes.core.helm:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+    name: arc
+    chart_ref: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
+    chart_version: "{{ arc_chart_version }}"
+    release_namespace: arc-systems
+    create_namespace: true
+    state: present # Chỉ cài nếu chưa có hoặc có thay đổi cấu hình
+
+# Deploy runner scale sets without writing the GitHub PAT to a temporary values file.
+- name: Deploy runner charts for GitHub runners
+  kubernetes.core.helm:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+    name: "{{ item.runner_name }}"
+    chart_ref: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+    chart_version: "{{ arc_chart_version }}"
+    release_namespace: arc-runners
+    create_namespace: true
+    release_values:
       githubConfigUrl: "{{ item.github_repo }}"
       githubConfigSecret:
-        github_token: "{{ github_pat }}"
+        github_token: "{{ arc_github_token }}"
       containerMode:
-        type: "dind"
+        type: dind
       template:
         spec:
           serviceAccountName: "{{ item.serviceAccountName }}"
           containers:
             - name: runner
               image: "{{ item.custom_image }}"
-              command: ["/home/runner/run.sh"]
+              command:
+                - /home/runner/run.sh
               securityContext:
                 readOnlyRootFilesystem: false
-  loop: "{{ github_runner_configs }}"
-
-# 3. Cài đặt ARC Controller (Dùng module helm)
-- name: Install ARC Controller
-  kubernetes.core.helm:
-    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
-    name: arc
-    chart_ref: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
-    release_namespace: arc-systems
-    create_namespace: true
-    state: present # Chỉ cài nếu chưa có hoặc có thay đổi cấu hình
-
-# 4. Deploy Runner Scale Sets (Dùng module helm)
-- name: Deploy runner charts for GitHub runners
-  kubernetes.core.helm:
-    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
-    name: "{{ item.runner_name }}"
-    chart_ref: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
-    release_namespace: arc-runners
-    create_namespace: true
-    values_files:
-      - "/tmp/{{ item.runner_name }}-values.yaml"
     state: present
   loop: "{{ github_runner_configs }}"
+  no_log: true

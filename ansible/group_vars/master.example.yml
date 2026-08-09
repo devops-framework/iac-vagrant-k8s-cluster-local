@@ -1,0 +1,6 @@
+---
+# Copy this file to master.yml. The destination is ignored by Git.
+# Encrypt it with `ansible-vault encrypt ansible/group_vars/master.yml` when possible.
+github_username: "your_github_username_here"
+arc_github_token: "replace_with_a_runner_registration_token"
+argocd_repo_token: "replace_with_a_read_only_gitops_repository_token"

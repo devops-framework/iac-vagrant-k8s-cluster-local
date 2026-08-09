@@ -11,22 +11,35 @@
   template:
     src: "{{ role_path }}/conf/keepalived.conf.j2"
     dest: /etc/keepalived/keepalived.conf
+    mode: '0644'
+    validate: 'keepalived --config-test --use-file=%s'
   notify: Restart Keepalived
 
-- name: Append K8s configuration to HAProxy
+- name: Configure Kubernetes ingress frontends and backends in HAProxy
   blockinfile:
     path: /etc/haproxy/haproxy.cfg
     marker: "# {mark} ANSIBLE MANAGED BLOCK FOR K8S #"
+    validate: 'haproxy -c -f %s'
     block: |
-      # --- Cấu hình cho App 1 ---
-      frontend app1_frontend
-          bind *:80
-          bind *:443
+      frontend k8s_ingress_http
+          bind *:{{ ingress_http_port }}
           mode tcp
-          default_backend app1_backend
+          default_backend k8s_ingress_http
 
-      backend app1_backend
+      backend k8s_ingress_http
           mode tcp
-          server worker1 192.168.5.133
-          server worker2 192.168.5.134
+      {% for host in groups['workers'] %}
+          server {{ host }} {{ hostvars[host]['ansible_host'] }}:{{ ingress_http_port }} check
+      {% endfor %}
+
+      frontend k8s_ingress_https
+          bind *:{{ ingress_https_port }}
+          mode tcp
+          default_backend k8s_ingress_https
+
+      backend k8s_ingress_https
+          mode tcp
+      {% for host in groups['workers'] %}
+          server {{ host }} {{ hostvars[host]['ansible_host'] }}:{{ ingress_https_port }} check
+      {% endfor %}
   notify: Restart HAProxy
