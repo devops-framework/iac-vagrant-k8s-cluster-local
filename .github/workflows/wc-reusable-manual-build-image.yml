@@ -28,9 +28,11 @@ jobs:
     name: Build & Push
     runs-on: stg-ci-runner-set
     environment: ${{ inputs.gha_environment }}
+    permissions:
+      contents: read
     steps:
       - name: Discord start notification
-        uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/discord-notifier@dev
+        uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/discord-notifier@91f07e08a7590ec439ab9820691bda27d858bcf4 # dev
         with:
           webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
           status: 'start'
@@ -44,20 +46,19 @@ jobs:
             **Branch:** `${{ github.ref_name }}`
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          token: ${{ secrets.GIHUB_PAT }}
           fetch-depth: 0
 
       - name: Set IMAGE_TAG
         id: get-image-tag
         run: |
-          echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-          echo "image_tag=gha-staging-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=gha-staging-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Run Docker Build & Push
         id: docker-build-push
-        uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/dockerhub-build-push@dev
+        uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/dockerhub-build-push@91f07e08a7590ec439ab9820691bda27d858bcf4 # dev
         with:
           docker_username: ${{ secrets.DOCKER_USERNAME }}
           docker_password: ${{ secrets.DOCKER_PASSWORD }}
@@ -67,7 +68,7 @@ jobs:
 
       - name: Discord result notification
         if: always()
-        uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/discord-notifier@dev
+        uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/discord-notifier@91f07e08a7590ec439ab9820691bda27d858bcf4 # dev
         with:
           webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
           status: ${{ job.status }}
