@@ -19,6 +19,9 @@ on:
         description: 'Whether the cache was hit during deps job'
         value: ${{ jobs.check-deps.outputs.cache-hit }}
 
+permissions:
+  contents: read
+
 jobs:
   check-deps:
     name: 🔎 Check existence cache
@@ -28,13 +31,13 @@ jobs:
       cache-hit: ${{ steps.maven-cache.outputs.cache-hit }}
     steps:
       - name: Clone e-commerce-systems for ${{ inputs.module_path }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: devops-framework/e-commerce-systems
           path: e-commerce-systems
           sparse-checkout: |
             ${{ inputs.module_path }}
-            
+
       - name: Compute cache key from pom.xml + Java sources
         id: compute_key
         env:
@@ -46,7 +49,7 @@ jobs:
 
       - name: Lookup Maven repository cache (no download)
         id: maven-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ./.m2/repository
           key: ${{ steps.compute_key.outputs.hash }}
@@ -61,7 +64,7 @@ jobs:
       image: ${{ inputs.image_runtime }}
     steps:
       - name: Clone e-commerce-systems for ${{ inputs.module_path }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: devops-framework/e-commerce-systems
           path: e-commerce-systems
@@ -69,13 +72,15 @@ jobs:
             ${{ inputs.module_path }}
 
       - name: Resolve dependencies
+        env:
+          DEPS_MODULE: ./e-commerce-systems/${{ inputs.module_path }}
         run: |
           echo "Cache miss — resolving dependencies into m2 local"
-          mvn -B dependency:go-offline -f ./e-commerce-systems/${{ inputs.module_path }}/pom.xml -Dmaven.repo.local=./.m2/repository
-          mvn -B install -f ./e-commerce-systems/${{ inputs.module_path }}/pom.xml -Dmaven.repo.local=./.m2/repository
+          mvn -B dependency:go-offline -f "$DEPS_MODULE/pom.xml" -Dmaven.repo.local=./.m2/repository
+          mvn -B install -f "$DEPS_MODULE/pom.xml" -Dmaven.repo.local=./.m2/repository
 
       - name: Save Maven repository to cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ./.m2/repository
           key: ${{ needs.check-deps.outputs.cache-key }}
