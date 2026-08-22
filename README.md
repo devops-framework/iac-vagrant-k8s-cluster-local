@@ -104,7 +104,7 @@ sequenceDiagram
     Note over Dev,VM: Phase 1 — VM lifecycle (blue)
     Dev->>Vagrant: `vagrant up --no-provision`
     Vagrant->>Host: request resources and create VM fleet
-    Host->>VM: allocate CPU, memory, disk; boot OS
+    Host->>VM: allocate CPU, memory, disk and boot OS
     VM-->>Vagrant: VMs boot and SSH becomes available
   end
 
