@@ -90,6 +90,7 @@ coloured phases so the VM lifecycle, default cluster deployment, and optional
 platform add-ons are easy to distinguish.
 
 ```mermaid
+%%{init: {"theme": "dark"}}%%
 sequenceDiagram
   actor Dev as Developer
   participant Vagrant as Vagrant
@@ -100,7 +101,7 @@ sequenceDiagram
   participant Cluster as RKE2 Cluster
   participant Ingress as Ingress Controller
 
-  rect rgb(224, 242, 254)
+  rect rgb(30, 41, 59)
     Note over Dev,VM: Phase 1 — VM lifecycle (blue)
     Dev->>Vagrant: `vagrant up --no-provision`
     Vagrant->>Host: request resources and create VM fleet
@@ -108,7 +109,7 @@ sequenceDiagram
     VM-->>Vagrant: VMs boot and SSH becomes available
   end
 
-  rect rgb(220, 252, 231)
+  rect rgb(25, 61, 48)
     Note over Dev,Cluster: Phase 2 — default cluster capability (green)
     Dev->>Vagrant: `vagrant provision rke2-server-001`
     Vagrant->>Ansible: use committed inventory and `--tags kubernetes`
@@ -118,7 +119,7 @@ sequenceDiagram
     Cluster->>Ingress: install ingress and register services
   end
 
-  rect rgb(254, 249, 195)
+  rect rgb(78, 63, 28)
     Note over Dev,Cluster: Phase 3 — opt-in platform capability (amber)
     Dev->>Vagrant: `VAGRANT_DEPLOY=argocd|github-runner|all vagrant provision rke2-server-001`
     Vagrant->>Ansible: select the requested capability tags
@@ -126,7 +127,7 @@ sequenceDiagram
     Ansible->>Cluster: install Argo CD and/or GitHub runners
   end
 
-  rect rgb(243, 232, 255)
+  rect rgb(61, 42, 78)
     Note over Dev,Ingress: Access configuration (purple)
     Dev->>Dev: add `ec.homelab.local` -> VIP IP to `/etc/hosts`
   end
