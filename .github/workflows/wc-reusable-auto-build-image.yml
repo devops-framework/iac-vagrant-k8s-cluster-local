@@ -37,10 +37,10 @@ jobs:
     runs-on: stg-ci-runner-set
     environment: ${{ inputs.gha_environment }}
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Discord start notification
-        uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/discord-notifier@dev
+        uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/discord-notifier@91f07e08a7590ec439ab9820691bda27d858bcf4 # dev
         with:
           webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
           status: 'start'
@@ -54,11 +54,11 @@ jobs:
             **Branch:** `${{ github.ref_name }}`
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Generate token from GitHub App
         id: generate-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         with:
           app-id: ${{ secrets.IAC_APP_ID }}
           private-key: ${{ secrets.IAC_APP_PRIVATE_KEY }}
@@ -66,15 +66,16 @@ jobs:
           repositories: iac-vagrant-k8s-cluster-local
 
       - name: Checkout iac repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: devops-framework/iac-vagrant-k8s-cluster-local
+          ref: 91f07e08a7590ec439ab9820691bda27d858bcf4 # dev
           token: ${{ steps.generate-token.outputs.token }}
           path: iac-repo
 
       - name: Restore Maven repository cache
         if: ${{ inputs.deps_cache_key != '' }}
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ./.m2/repository
           key: ${{ inputs.deps_cache_key }}
@@ -86,15 +87,15 @@ jobs:
 
       - name: Set short SHA
         id: get-short-sha
-        run: echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+        run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Set image tag
         id: get-image-tag
-        run: echo "image_tag=gha-staging-${{ steps.get-short-sha.outputs.short_sha }}" >> $GITHUB_OUTPUT
+        run: echo "image_tag=gha-staging-${{ steps.get-short-sha.outputs.short_sha }}" >> "$GITHUB_OUTPUT"
 
       - name: Run Docker Build & Push
         id: docker-build-push
-        uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/dockerhub-build-push@dev
+        uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/dockerhub-build-push@91f07e08a7590ec439ab9820691bda27d858bcf4 # dev
         with:
           docker_username: ${{ secrets.DOCKER_USERNAME }}
           docker_password: ${{ secrets.DOCKER_PASSWORD }}
@@ -105,11 +106,22 @@ jobs:
       - name: Update Image Tag in Deployment
         id: updated_image_tag
         shell: bash
+        env:
+          APP_NAME: ${{ inputs.app_name }}
         run: |
           IMAGE_TAG="${{ steps.get-image-tag.outputs.image_tag }}"
-          # Derive per-app overlay path so CI updates the correct overlay kustomization
-          APP_NAME="${{ inputs.app_name }}"
-          MANIFEST_PATH="iac-repo/devops/cd/k8s/overlays/staging/${APP_NAME}/kustomization.yml"
+          # Docker image names and GitOps overlay directory names are deliberately
+          # distinct. Keep the mapping explicit and fail closed for a new app.
+          case "$APP_NAME" in
+            e-commerce-jsf) OVERLAY_NAME="storefront" ;;
+            e-commerce-order-service) OVERLAY_NAME="order-service" ;;
+            e-commerce-product-service) OVERLAY_NAME="product-service" ;;
+            *)
+              echo "ERROR: no staging overlay is registered for image $APP_NAME" >&2
+              exit 1
+              ;;
+          esac
+          MANIFEST_PATH="iac-repo/devops/cd/k8s/overlays/staging/${OVERLAY_NAME}/kustomization.yml"
 
           # Sanity checks: manifest must exist and contain an 'images:' block
           if [ ! -f "$MANIFEST_PATH" ]; then
@@ -125,13 +137,11 @@ jobs:
           # Fallback: use sed to replace newTag value in kustomization (simple, portable for Linux runners)
           sed -i "s|newTag: \".*\"|newTag: \"$IMAGE_TAG\"|g" "$MANIFEST_PATH"
 
-          echo "manifest_path=${MANIFEST_PATH}" >> $GITHUB_OUTPUT
+          echo "manifest_path=${MANIFEST_PATH}" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push iac changes
         id: iac-commit
         shell: bash
-        env:
-          IAC_TOKEN: ${{ steps.generate-token.outputs.token }}
         run: |
           set -euo pipefail
           pushd iac-repo
@@ -144,19 +154,19 @@ jobs:
           git add "$REL_PATH"
           if git diff --staged --quiet; then
             echo "no changes to commit"
-            echo "changes_detected=false" >> $GITHUB_OUTPUT
+            echo "changes_detected=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "chore(staging): Auto pin image to ${{ steps.get-short-sha.outputs.short_sha }}"
             COMMIT_HASH=$(git rev-parse HEAD)
-            git push https://x-access-token:${IAC_TOKEN}@github.com/devops-framework/iac-vagrant-k8s-cluster-local.git HEAD:develop/homelab/centralized-k8s-manifest
-            echo "changes_detected=true" >> $GITHUB_OUTPUT
-            echo "commit_hash=${COMMIT_HASH}" >> $GITHUB_OUTPUT
+            git push origin HEAD:dev
+            echo "changes_detected=true" >> "$GITHUB_OUTPUT"
+            echo "commit_hash=${COMMIT_HASH}" >> "$GITHUB_OUTPUT"
           fi
           popd
 
       - name: Discord result notification
         if: always()
-        uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/discord-notifier@dev
+        uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/discord-notifier@91f07e08a7590ec439ab9820691bda27d858bcf4 # dev
         with:
           webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
           status: ${{ job.status }}

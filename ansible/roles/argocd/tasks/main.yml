@@ -10,9 +10,23 @@
 - name: Install ArgoCD Manifests
   kubernetes.core.k8s:
     kubeconfig: "{{ rke2_kubeconfig }}"
-    src: https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    src: "https://raw.githubusercontent.com/argoproj/argo-cd/{{ argocd_version }}/manifests/install.yaml"
     namespace: argocd
     state: present
+
+- name: Set least-privilege default Argo CD RBAC policy
+  kubernetes.core.k8s:
+    kubeconfig: "{{ rke2_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: argocd-rbac-cm
+        namespace: argocd
+      data:
+        policy.default: role:readonly
+        scopes: '[groups]'
 
 - name: Patch ArgoCD ConfigMap to disable internal TLS (Fix Redirect Loop)
   kubernetes.core.k8s:
@@ -26,8 +40,9 @@
         namespace: argocd
       data:
         server.insecure: "true"
+  register: argocd_server_config
 
-- name: Delete ArgoCD server pods to apply ConfigMap forcefully
+- name: Delete ArgoCD server pods to apply ConfigMap change
   kubernetes.core.k8s:
     kubeconfig: "{{ rke2_kubeconfig }}"
     api_version: v1
@@ -36,6 +51,7 @@
     label_selectors:
       - app.kubernetes.io/name=argocd-server
     state: absent
+  when: argocd_server_config.changed
 
 - name: Wait for ingress-controller admission endpoints
   kubernetes.core.k8s_info:
@@ -86,17 +102,17 @@
   retries: 10
   delay: 10
   until: argocd_secret.resources | length > 0
+  no_log: true
 
 - name: Save Admin Password to Fact
   set_fact:
     argocd_url: "https://{{ argocd_domain | default('argocd.homelab') }}"
     argocd_admin_password: "{{ argocd_secret.resources[0].data.password | b64decode }}"
+  no_log: true
 
 - name: Display ArgoCD Access Info
   debug:
-    msg: 
-      - "ArgoCD URL: {{ argocd_url }}"
-      - "Admin Password: {{ argocd_admin_password }}"
+    msg: "ArgoCD URL: {{ argocd_url }}. Retrieve the initial admin password directly from the cluster when needed."
 
 # 1. Tạo AppProjects
 - name: Ensure ArgoCD Projects exist
@@ -113,6 +129,8 @@
         description: "{{ item.description }}"
         sourceRepos: "{{ item.source_repos }}"
         destinations: "{{ item.destinations }}"
+        namespaceResourceWhitelist: "{{ item.namespace_resource_whitelist }}"
+        clusterResourceWhitelist: []
   loop: "{{ argocd_projects }}"
 
 # 2. Tạo Repository Secrets (Sử dụng HTTPS + PAT)
@@ -131,9 +149,10 @@
       stringData:
         url: "{{ item.github_repo }}"
         username: "{{ github_username }}"
-        password: "{{ github_pat }}"
+        password: "{{ argocd_repo_token }}"
         project: "{{ item.project }}"
   loop: "{{ argocd_repos }}"
+  no_log: true
 
 # 3. Tạo Applications
 - name: Ensure ArgoCD Applications are deployed

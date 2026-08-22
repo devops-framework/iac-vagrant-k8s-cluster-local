@@ -1,0 +1,8 @@
+---
+# GitHub Actions Runner Controller configuration.
+arc_chart_version: "0.9.3"
+github_runner_configs:
+  - runner_name: "stg-ci-runner-set"
+    custom_image: "tantran0411/github-runner-ci:v1"
+    github_repo: "https://github.com/devops-framework"
+    serviceAccountName: "staging-runner-sa"

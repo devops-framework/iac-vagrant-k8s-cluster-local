@@ -6,6 +6,3 @@ resources:
   - storefront/
   - order-service/
   - product-service/
-  - infra/
-
-namespace: staging

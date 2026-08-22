@@ -25,6 +25,9 @@ on:
         required: false
         default: true
 
+permissions:
+  contents: read
+
 jobs:
   check-deps:
     runs-on: stg-ci-runner-set
@@ -41,7 +44,7 @@ jobs:
       common_deps_3rd_cache_key: ${{ steps.export-cache.outputs.cache_key_common_deps_3rd }}
       common_deps_3rd_cache_hit: ${{ steps.maven-cache.outputs.cache_hit_common_deps_3rd }}
     steps:
-      - uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/check-deps@dev
+      - uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/check-deps@91f07e08a7590ec439ab9820691bda27d858bcf4 # dev
         id: maven-cache
         with:
           module_path: ${{ matrix.module }}
@@ -50,8 +53,8 @@ jobs:
         id: export-cache
         shell: bash
         run: |
-          echo "cache_key_${{ matrix.name }}=${{ steps.maven-cache.outputs.cache-key }}" >> $GITHUB_OUTPUT
-          echo "cache_hit_${{ matrix.name }}=${{ steps.maven-cache.outputs.cache-hit }}" >> $GITHUB_OUTPUT
+          echo "cache_key_${{ matrix.name }}=${{ steps.maven-cache.outputs.cache-key }}" >> "$GITHUB_OUTPUT"
+          echo "cache_hit_${{ matrix.name }}=${{ steps.maven-cache.outputs.cache-hit }}" >> "$GITHUB_OUTPUT"
 
   build-module:
     needs: check-deps
@@ -60,28 +63,35 @@ jobs:
     container:
       image: 'maven:3.8.4-openjdk-11-slim'
     steps:
-      - uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/build-deps@dev
+      - uses: devops-framework/iac-vagrant-k8s-cluster-local/.github/actions/build-deps@91f07e08a7590ec439ab9820691bda27d858bcf4 # dev
         with:
           module_path: 'common-deps'
           cache_key: ${{ needs.check-deps.outputs.common_deps_cache_key }}
 
   build-a:
-    if: ${{ inputs.deploy_a }}
+    if: ${{ always() && inputs.deploy_a && needs.check-deps.result == 'success' && (needs.build-module.result == 'success' || needs.build-module.result == 'skipped') }}
     needs: 
       - check-deps
       - build-module
     runs-on: stg-ci-runner-set
+    outputs:
+      image: ${{ steps.build.outputs.image }}
     steps:
-      - run: |
+      - id: build
+        run: |
           echo "Building A with cache key ${{ needs.check-deps.outputs.common_deps_cache_key }}"
-          echo "image=abc:123" >> $GITHUB_OUTPUT
+          echo "image=abc:123" >> "$GITHUB_OUTPUT"
 
   build-b:
     if: ${{ inputs.deploy_b }}
     runs-on: stg-ci-runner-set
+    outputs:
+      image: ${{ steps.build.outputs.image }}
     steps:
-      - run: |
+      - id: build
+        run: |
           echo "Building B..."
+          echo "image=xyz:123" >> "$GITHUB_OUTPUT"
 
   deploy-a-cluster1:
     if: inputs.deploy_a && inputs.deploy_cluster1

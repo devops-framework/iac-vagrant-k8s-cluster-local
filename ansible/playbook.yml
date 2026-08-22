@@ -1,32 +1,57 @@
 ---
 - name: Setup RKE2 Master
   hosts: master
-  become: yes
+  become: true
+  tags: [kubernetes, rke2-server]
   roles:
+    - common
     - rke2-server
 
 - name: Setup RKE2 Agents
   hosts: workers
-  become: yes
-  vars:
-    rke2_token: "{{ hostvars[groups['master'][0]]['rke2_token'] }}"
+  become: true
+  tags: [kubernetes, rke2-agent]
+  pre_tasks:
+    - name: Read RKE2 join token from master for standalone agent provisioning
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/rke2/server/node-token
+      delegate_to: "{{ groups['master'][0] }}"
+      delegate_facts: false
+      run_once: true
+      register: rke2_node_token
+
+    - name: Set RKE2 join token for worker configuration
+      ansible.builtin.set_fact:
+        rke2_token: "{{ rke2_node_token.content | b64decode | trim }}"
   roles:
+    - common
     - rke2-agent
 
 - name: Setup VIP Load Balancer
   hosts: loadbalancer
-  become: yes
+  become: true
+  tags: [kubernetes, loadbalancer]
   roles:
+    - common
     - vip_lb
 
-- name: Deploy Github Runner to RKE2 Cluster
+- name: Bootstrap Kubernetes platform boundaries
   hosts: master
-  become: yes
+  become: true
+  tags: [platform, platform-bootstrap]
+  roles:
+    - platform-bootstrap
+
+- name: Deploy GitHub Runner to RKE2 Cluster
+  hosts: master
+  become: true
+  tags: [platform, github-runner]
   roles:
     - github-rac
 
 - name: Deploy ArgoCD to RKE2 Cluster
   hosts: master
-  become: yes
+  become: true
+  tags: [platform, argocd]
   roles:
     - argocd

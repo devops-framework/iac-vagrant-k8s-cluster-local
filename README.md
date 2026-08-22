@@ -85,7 +85,9 @@ Short explanation (request flow):
 
 ## 2) Provisioning sequence (how the VMs get created and configured)
 
-The diagram below shows the typical provisioning flow when starting from nothing: Vagrant creates VMs, they boot, then Ansible connects and installs RKE2, keepalived/HAProxy, Ingress, Argo CD, and other components.
+The diagram below shows the provisioning flow from an empty machine. It uses
+coloured phases so the VM lifecycle, default cluster deployment, and optional
+platform add-ons are easy to distinguish.
 
 ```mermaid
 sequenceDiagram
@@ -98,47 +100,80 @@ sequenceDiagram
   participant Cluster as RKE2 Cluster
   participant Ingress as Ingress Controller
 
-  Dev->>Vagrant: run `vagrant up`
-  Vagrant->>Host: request resources & create VM
-  Host->>VM: allocate CPU/memory/disk and boot OS
-  VM-->>Vagrant: VM boots and SSH becomes available
-  Vagrant->>Ansible: generate inventory (SSH keys, IPs)
-  Dev->>Ansible: run `ansible-playbook ansible/playbook.yml --flush-cache`
-  Ansible->>VM: connect via SSH
-  Ansible->>VM: run playbooks => install prerequisites (docker, kernel modules)
-  Ansible->>Cluster: install RKE2 (control plane & agents)
-  Ansible->>VIP: configure keepalived + HAProxy (assign virtual IP)
-  Ansible->>Ingress: deploy Ingress controller
-  Ansible->>Cluster: deploy Argo CD & GitHub runners
-  Cluster->>Ingress: services register and become routable
-  Note over Dev,VM: update `/etc/hosts` -> `ec.homelab.local` -> VIP IP
+  rect rgb(224, 242, 254)
+    Note over Dev,VM: Phase 1 — VM lifecycle (blue)
+    Dev->>Vagrant: `vagrant up --no-provision`
+    Vagrant->>Host: request resources and create VM fleet
+    Host->>VM: allocate CPU, memory, disk; boot OS
+    VM-->>Vagrant: VMs boot and SSH becomes available
+  end
+
+  rect rgb(220, 252, 231)
+    Note over Dev,Cluster: Phase 2 — default cluster capability (green)
+    Dev->>Vagrant: `vagrant provision rke2-server-001`
+    Vagrant->>Ansible: use committed inventory and `--tags kubernetes`
+    Ansible->>VM: configure prerequisites and SSH access
+    Ansible->>Cluster: install RKE2 control plane and agents
+    Ansible->>VIP: configure keepalived and HAProxy
+    Cluster->>Ingress: install ingress and register services
+  end
+
+  rect rgb(254, 249, 195)
+    Note over Dev,Cluster: Phase 3 — opt-in platform capability (amber)
+    Dev->>Vagrant: `VAGRANT_DEPLOY=argocd|github-runner|all vagrant provision rke2-server-001`
+    Vagrant->>Ansible: select the requested capability tags
+    Ansible->>Cluster: bootstrap platform boundaries when required
+    Ansible->>Cluster: install Argo CD and/or GitHub runners
+  end
+
+  rect rgb(243, 232, 255)
+    Note over Dev,Ingress: Access configuration (purple)
+    Dev->>Dev: add `ec.homelab.local` -> VIP IP to `/etc/hosts`
+  end
 ```
 
 Short numbered steps:
-1. On your developer machine run `vagrant up`.
-2. Vagrant asks the host to create VMs; VMs boot with a minimal OS and SSH enabled.
-3. Vagrant writes an Ansible inventory containing VM IPs and SSH keys.
-4. Developer triggers Ansible with `ansible-playbook ...` to provision the machines.
-5. Ansible connects to each VM over SSH and runs the configured playbooks.
-6. Playbooks install dependencies and RKE2; control plane and worker nodes are initialized and joined.
-7. Playbooks configure the VIP (keepalived) and HAProxy to expose the virtual IP.
-8. Ingress controller, Argo CD, and runners are installed into the cluster.
-9. Once provisioned, add `ec.homelab.local` to your local `/etc/hosts` pointing at the VIP IP to access the cluster through the load balancer.
+1. Run `vagrant up --no-provision` so every VM is SSH-ready before cluster provisioning starts.
+2. Run `vagrant provision rke2-server-001`; `VAGRANT_DEPLOY` defaults to `cluster` and selects only the RKE2 control plane, agents, and VIP load balancer.
+3. Ansible connects with the committed inventory, installs RKE2, joins workers, and configures keepalived/HAProxy.
+4. Opt into add-ons only when needed: `VAGRANT_DEPLOY=argocd`, `VAGRANT_DEPLOY=github-runner`, or `VAGRANT_DEPLOY=all`.
+5. Add `ec.homelab.local` to local `/etc/hosts`, pointing to the VIP IP, to access ingress-routed services.
 
 ## 3) Quick start / Provisioning steps
 
-Quick start (minimal):
+Quick start (minimal; default deploys only the RKE2 cluster):
 
 ```bash
-# 1. Bring up VMs
-vagrant up
+# 1. Bring up the whole VM fleet before Ansible touches the cluster
+vagrant up --no-provision
 
 # 2. Verify connectivity
 ansible all -m ping
 
-# 3. Provision cluster (from repo root)
-ansible-playbook ansible/playbook.yml --flush-cache
+# 3. Provision the default cluster capability
+vagrant provision rke2-server-001
 ```
+
+Choose an opt-in capability with `VAGRANT_DEPLOY`. `argocd` and
+`github-runner` include platform bootstrap first; `all` runs the complete
+playbook:
+
+```bash
+VAGRANT_DEPLOY=platform-bootstrap vagrant provision rke2-server-001
+VAGRANT_DEPLOY=argocd vagrant provision rke2-server-001
+VAGRANT_DEPLOY=github-runner vagrant provision rke2-server-001
+VAGRANT_DEPLOY=all vagrant provision rke2-server-001
+```
+
+Available values: `cluster` (default), `platform-bootstrap`, `argocd`,
+`github-runner`, and `all`. Rancher is not yet a repository capability: no
+Rancher Ansible role or manifest exists, so it is intentionally not exposed as
+a no-op option.
+
+Application delivery is GitOps-only: runners build and update the repository, while
+Argo CD is the only component allowed to reconcile application workloads. Runner
+pods do not receive Kubernetes API tokens or RBAC permissions in application
+namespaces.
 
 Verify cluster components:
 
@@ -160,7 +195,7 @@ rm -rf .vagrant/
 
 ### Requirements
 - macOS (Apple Silicon supported)
-- VMware Fusion 13.5+ (or another supported provider)
+- VMware Fusion 13.5+ with the `vagrant-vmware-desktop` plugin
 - Vagrant
 - Ansible
 - A suitable Vagrant base image for ARM64 (Ubuntu)
@@ -176,18 +211,19 @@ vagrant plugin install vagrant-vmware-desktop
 Install required Ansible collections:
 
 ```bash
-ansible-galaxy collection install ansible.posix kubernetes.core
+ansible-galaxy collection install -r ansible/requirements.yml
 ```
 
 ### Pre-installation (secrets)
-- Configure your GitHub Personal Access Token (PAT) in `ansible/group_vars/master.yml` for the Actions Runner Controller:
+- Copy `ansible/group_vars/master.example.yml` to the ignored `ansible/group_vars/master.yml`, then set separate GitHub credentials for Actions Runner Controller and Argo CD. Prefer encrypting the file with Ansible Vault. The Argo CD token must be read-only and scoped only to the GitOps repository.
 
 ```yaml
 github_username: "your_github_username_here"
-github_pat: "ghp_your_secret_token_here"
+arc_github_token: "replace_with_a_runner_registration_token"
+argocd_repo_token: "replace_with_a_read_only_gitops_repository_token"
 ```
 
-- Ensure SSH keys are available in `ssh_keys/` (the original repo contains `ssh_keys/id_rsa` and `id_rsa.pub`).
+- Ensure your own SSH key pair is available as `ssh_keys/id_rsa` and `ssh_keys/id_rsa.pub`. The directory is ignored and no private key is committed.
 
 ## 5) Helm / app notes
 
@@ -248,16 +284,10 @@ Tip:
 kubectl delete pod -n kube-system -l k8s-app=canal
 ```
 
-## 7) References
+## 7) Validation
 
-- Original network design (Vietnamese): `.github/docs/network-design.md`
-- Original lab README: `iac-vagrant-k8s-cluster-local/README.md` (merged)
+Run the repository checks before provisioning or opening a pull request:
 
----
-
-If you'd like, I can:
-- Split this into separate files under `iac/` (e.g., `network-design.md`, `provisioning.md`).
-- Render the Mermaid diagrams to SVG and attach them to the repo for consistent GitHub display.
-
-*** End Patch
-
+```bash
+./scripts/validate.sh
+```
